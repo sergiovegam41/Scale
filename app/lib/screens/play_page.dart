@@ -1,0 +1,483 @@
+import 'package:flutter/material.dart';
+import 'package:scale_core/scale_core.dart';
+
+import '../analysis/chord_engine.dart';
+import '../midi/midi_service.dart';
+import '../play/live_follow.dart';
+import '../play/song_player.dart';
+import '../settings.dart';
+import '../storage/song_repository.dart';
+import '../widgets/chord_cell.dart';
+import '../widgets/repeat_badge.dart';
+import '../widgets/settings_sheet.dart';
+
+enum PlayMode { original, live }
+
+/// Tocar una canción: reproducir la toma original o seguir en vivo lo que tocas.
+class PlayPage extends StatefulWidget {
+  const PlayPage({
+    super.key,
+    required this.song,
+    required this.repo,
+    required this.midi,
+    required this.engine,
+    required this.settings,
+  });
+
+  final Song song;
+  final SongRepository repo;
+  final MidiService midi;
+  final ChordEngine engine;
+  final AppSettings settings;
+
+  @override
+  State<PlayPage> createState() => _PlayPageState();
+}
+
+class _PlayPageState extends State<PlayPage> {
+  late final SongPlayer player = SongPlayer(song: widget.song, midi: widget.midi);
+  late final LiveFollow live = LiveFollow(song: widget.song, engine: widget.engine);
+  late PlayMode mode = player.canPlay ? PlayMode.original : PlayMode.live;
+  final Map<int, GlobalKey> _cellKeys = {};
+  int? _scrolledTo;
+
+  Song get song => widget.song;
+  AppSettings get settings => widget.settings;
+
+  /// Ver lo que suena o las figuras originales (se guarda con la canción).
+  bool get sounding => !song.showOriginal;
+  int get _shown => sounding ? song.transpose : 0;
+
+  Future<void> _setSounding(bool value) async {
+    setState(() => song.showOriginal = !value);
+    await widget.repo.save(song);
+  }
+
+  /// Cambia el transporte de la canción (y la capa del motor para seguir).
+  Future<void> _setTranspose(int semitones) async {
+    setState(() {
+      song.transpose = semitones;
+      if (semitones == 0) song.showOriginal = false;
+    });
+    widget.engine.layer = semitones;
+    await widget.repo.save(song);
+  }
+
+  late final int _previousLayer;
+
+  @override
+  void initState() {
+    super.initState();
+    // Para tocar con el transporte de la canción, el motor usa la misma capa.
+    _previousLayer = widget.engine.layer;
+    widget.engine.layer = song.transpose;
+  }
+
+  @override
+  void dispose() {
+    player.dispose();
+    live.dispose();
+    widget.engine.layer = _previousLayer;
+    super.dispose();
+  }
+
+  int? get _current => switch (mode) {
+        PlayMode.original => player.chordIndex,
+        PlayMode.live => live.follower.position < 0 ? null : live.follower.position,
+      };
+
+  int? get _next {
+    if (mode == PlayMode.live) return live.follower.next;
+    final c = _current;
+    if (c == null) return song.chords.isEmpty ? null : 0;
+    return c + 1 < song.chords.length ? c + 1 : null;
+  }
+
+  void _setMode(PlayMode m) {
+    if (m == mode) return;
+    player.pause();
+    setState(() => mode = m);
+  }
+
+  void _tapChord(int index) {
+    switch (mode) {
+      case PlayMode.original:
+        final start = song.chords[index].startMicros;
+        if (start != null) player.seek(start);
+      case PlayMode.live:
+        live.jumpTo(index);
+    }
+  }
+
+  String _chordText(int index) {
+    final chord = song.chords[index].chord.transpose(_shown);
+    final key = song.keyAt(index)?.transpose(_shown);
+    final fmt = settings.formatter;
+    final name = fmt.format(chord, spell: key?.spell);
+    return switch (settings.display) {
+      ChordDisplay.chords => name,
+      ChordDisplay.degrees => key == null ? name : fmt.nashville(chord, key),
+      ChordDisplay.both => key == null ? name : '$name  ·  ${fmt.nashville(chord, key)}',
+    };
+  }
+
+  String _whereLabel(int index) {
+    final o = song.occurrenceAt(index);
+    if (o == null) return '';
+    final label = song.section(o.sectionId)?.label ?? '';
+    return o.repeats > 1 ? '$label · vuelta ${o.passOf(index)} de ${o.repeats}' : label;
+  }
+
+  void _scrollToCurrent(int? index) {
+    if (index == null || index == _scrolledTo) return;
+    _scrolledTo = index;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final context = _cellKeys[index]?.currentContext;
+      if (context != null) {
+        Scrollable.ensureVisible(
+          context,
+          alignment: 0.35,
+          duration: const Duration(milliseconds: 300),
+          curve: Curves.easeOut,
+        );
+      }
+    });
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return ListenableBuilder(
+      listenable: Listenable.merge([player, live, settings]),
+      builder: (context, _) {
+        final current = _current;
+        _scrollToCurrent(current);
+        return Scaffold(
+          appBar: AppBar(
+            title: Text(song.title, overflow: TextOverflow.ellipsis),
+            actions: [
+              SegmentedButton<PlayMode>(
+                segments: [
+                  ButtonSegment(
+                    value: PlayMode.original,
+                    enabled: player.canPlay,
+                    icon: const Icon(Icons.play_circle_outline),
+                    label: const Text('Original'),
+                    tooltip: 'Reproducir la toma original',
+                  ),
+                  const ButtonSegment(
+                    value: PlayMode.live,
+                    icon: Icon(Icons.piano),
+                    label: Text('En vivo'),
+                    tooltip: 'Tocar en vivo: avanza con lo que tocas',
+                  ),
+                ],
+                selected: {mode},
+                onSelectionChanged: (s) => _setMode(s.first),
+              ),
+              const SizedBox(width: 12),
+              _transposeStepper(),
+              if (song.transpose != 0 && song.key != null) ...[
+                const SizedBox(width: 12),
+                SegmentedButton<bool>(
+                  segments: [
+                    ButtonSegment(value: true, label: Text('Suena ${song.soundingKey!.name(settings.notation)}')),
+                    ButtonSegment(value: false, label: Text('Original ${song.key!.name(settings.notation)}')),
+                  ],
+                  selected: {sounding},
+                  onSelectionChanged: (s) => _setSounding(s.first),
+                ),
+              ],
+              SettingsButton(settings: settings),
+              const SizedBox(width: 8),
+            ],
+          ),
+          body: Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+            child: Column(
+              children: [
+                SizedBox(height: 210, child: _nowNext(current, _next)),
+                const SizedBox(height: 12),
+                Expanded(child: _chart(current, _next)),
+                if (mode == PlayMode.original) _transport(),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  /// − Transpose +2 +: queda guardado en la canción para la próxima vez.
+  Widget _transposeStepper() {
+    final scheme = Theme.of(context).colorScheme;
+    final t = song.transpose;
+    final range = settings.transposeRange;
+    return Tooltip(
+      message: 'Transporte de la canción (se guarda). Ponlo igual en el TRANSPOSE del piano.',
+      child: Container(
+        decoration: BoxDecoration(
+          border: Border.all(color: t == 0 ? scheme.outlineVariant : scheme.tertiary),
+          borderRadius: BorderRadius.circular(24),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: t > -range ? () => _setTranspose(t - 1) : null,
+              icon: const Icon(Icons.remove),
+            ),
+            Text(
+              'Transpose ${TransposeAdvice.label(t)}',
+              style: TextStyle(
+                fontWeight: FontWeight.w600,
+                color: t == 0 ? scheme.onSurface : scheme.tertiary,
+              ),
+            ),
+            IconButton(
+              visualDensity: VisualDensity.compact,
+              onPressed: t < range ? () => _setTranspose(t + 1) : null,
+              icon: const Icon(Icons.add),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _nowNext(int? current, int? next) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+
+    Widget card(String title, int? index, {required bool main}) => Card(
+          color: main ? scheme.primaryContainer : null,
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(title, style: text.titleMedium),
+                Expanded(
+                  child: Center(
+                    child: FittedBox(
+                      child: Text(
+                        index == null ? '—' : _chordText(index),
+                        style: TextStyle(
+                          fontSize: main ? 96 : 64,
+                          fontWeight: FontWeight.w700,
+                          color: main ? scheme.onPrimaryContainer : repeatColor,
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+                Text(
+                  index == null ? '' : _whereLabel(index),
+                  style: text.titleMedium?.copyWith(
+                    color: main ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(flex: 3, child: card('Ahora', current, main: true)),
+        const SizedBox(width: 12),
+        Expanded(flex: 2, child: card('Sigue', next, main: false)),
+        const SizedBox(width: 12),
+        SizedBox(width: 300, child: mode == PlayMode.live ? _liveStatus() : _playbackInfo()),
+      ],
+    );
+  }
+
+  Widget _liveStatus() {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final f = live.follower;
+    final fmt = settings.formatter;
+    final played = f.lastPlayed;
+    final (label, color) = switch (f.status) {
+      FollowStatus.waiting => ('Toca el primer acorde', scheme.onSurfaceVariant),
+      FollowStatus.onTrack => ('En curso', Colors.greenAccent),
+      FollowStatus.jumped => ('Saltaste a ${_whereLabel(f.position)}', scheme.tertiary),
+      FollowStatus.offScript => ('Esperando el acorde que sigue', Colors.amberAccent),
+      FollowStatus.finished => ('¡Fin de la canción!', Colors.greenAccent),
+    };
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            _connectionLine(),
+            const SizedBox(height: 8),
+            Text(label, style: text.titleMedium?.copyWith(color: color)),
+            if (played != null) ...[
+              const SizedBox(height: 4),
+              Text(
+                'Tocaste: ${fmt.format(played.transpose(_shown))}',
+                style: text.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+            ],
+            if (song.transpose != 0)
+              Text(
+                'TRANSPOSE del piano en ${TransposeAdvice.label(song.transpose)}',
+                style: text.bodyMedium?.copyWith(color: scheme.tertiary),
+              ),
+            const Spacer(),
+            Tooltip(
+              message: 'También puedes tocar un acorde de la partitura para saltar ahí.',
+              child: TextButton.icon(
+                onPressed: live.restart,
+                icon: const Icon(Icons.replay),
+                label: const Text('Desde el inicio'),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// Estado del piano en una línea (cabe en el panel angosto).
+  Widget _connectionLine() {
+    final scheme = Theme.of(context).colorScheme;
+    final device = widget.midi.connected;
+    return Row(
+      children: [
+        Icon(
+          device == null ? Icons.usb_off : Icons.piano,
+          size: 18,
+          color: device == null ? scheme.error : Colors.greenAccent,
+        ),
+        const SizedBox(width: 8),
+        Expanded(
+          child: Text(
+            device?.name ?? 'Piano desconectado',
+            overflow: TextOverflow.ellipsis,
+            style: TextStyle(color: scheme.onSurfaceVariant),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _playbackInfo() {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Toma original', style: text.titleMedium),
+            const SizedBox(height: 4),
+            Text(
+              'Se reproduce el MIDI tal cual lo tocaste.',
+              style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+            ),
+            const Spacer(),
+            SwitchListTile(
+              contentPadding: EdgeInsets.zero,
+              title: const Text('Sonar en el piano'),
+              subtitle: Text(widget.midi.connected == null ? 'Piano desconectado' : 'Por el cable MIDI'),
+              value: player.soundOnPiano,
+              onChanged: (v) => setState(() {
+                player.pause();
+                player.soundOnPiano = v;
+              }),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _transport() {
+    final text = Theme.of(context).textTheme;
+    String clock(int micros) {
+      final s = micros ~/ 1000000;
+      return '${s ~/ 60}:${(s % 60).toString().padLeft(2, '0')}';
+    }
+
+    final total = player.durationMicros;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          IconButton.filled(
+            iconSize: 32,
+            onPressed: player.toggle,
+            icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
+          ),
+          IconButton(onPressed: player.restart, icon: const Icon(Icons.replay)),
+          const SizedBox(width: 8),
+          Text(clock(player.positionMicros), style: text.titleMedium),
+          Expanded(
+            child: Slider(
+              value: total == 0 ? 0 : player.positionMicros.clamp(0, total) / total,
+              onChanged: (v) => player.seek((v * total).round()),
+            ),
+          ),
+          Text(clock(total), style: text.titleMedium),
+        ],
+      ),
+    );
+  }
+
+  Widget _chart(int? current, int? next) {
+    final occurrences = song.arrangement.isEmpty
+        ? [SectionOccurrence(sectionId: '', start: 0, end: song.chords.length)]
+        : song.arrangement;
+    final scheme = Theme.of(context).colorScheme;
+    final text = Theme.of(context).textTheme;
+    return ListView(
+      children: [
+        for (final o in occurrences)
+          Padding(
+            padding: const EdgeInsets.only(top: 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    Text(
+                      song.section(o.sectionId)?.label ?? '',
+                      style: text.titleMedium?.copyWith(color: scheme.primary),
+                    ),
+                    if (o.repeats > 1) ...[
+                      const SizedBox(width: 8),
+                      RepeatBadge(o.repeats, fontSize: 14),
+                    ],
+                  ],
+                ),
+                const SizedBox(height: 6),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var i = o.start; i < o.end; i++)
+                      ChordCell(
+                        key: _cellKeys.putIfAbsent(i, GlobalKey.new),
+                        chord: song.chords[i].chord.transpose(_shown),
+                        musicKey: song.keyAt(i)?.transpose(_shown),
+                        settings: settings,
+                        beats: song.chords[i].beats,
+                        highlight: i == current,
+                        ring: i == next ? repeatColor : null,
+                        onTap: () => _tapChord(i),
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+      ],
+    );
+  }
+}

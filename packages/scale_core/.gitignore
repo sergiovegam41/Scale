@@ -1,0 +1,4 @@
+.dart_tool/
+build/
+# Paquete (no aplicación): no se versiona el lock.
+pubspec.lock

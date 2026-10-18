@@ -1,0 +1,687 @@
+import 'package:flutter/material.dart';
+import 'package:scale_core/scale_core.dart';
+
+import '../analysis/chord_engine.dart';
+import '../midi/midi_service.dart';
+import '../settings.dart';
+import '../storage/song_repository.dart';
+import 'play_page.dart';
+import '../widgets/chord_cell.dart';
+import '../widgets/dialogs.dart';
+import '../widgets/repeat_badge.dart';
+import '../widgets/settings_sheet.dart';
+import '../widgets/song_key_panel.dart';
+
+enum SongView { sections, linear }
+
+/// Una canción: la secuencia de acordes como partitura y la tonalidad en la esquina.
+class SongPage extends StatefulWidget {
+  const SongPage({
+    super.key,
+    required this.song,
+    required this.repo,
+    required this.settings,
+    required this.midi,
+    required this.engine,
+  });
+
+  final Song song;
+  final SongRepository repo;
+  final AppSettings settings;
+  final MidiService midi;
+  final ChordEngine engine;
+
+  @override
+  State<SongPage> createState() => _SongPageState();
+}
+
+class _SongPageState extends State<SongPage> {
+  SongView view = SongView.sections;
+
+  /// Modo de edición de secciones: se ve todo en lineal y cada acorde puede
+  /// empezar una sección.
+  bool editing = false;
+
+  /// Con capa de transpose: ver lo que suena o las figuras originales. Se
+  /// guarda con la canción.
+  bool get sounding => !song.showOriginal;
+
+  Song get song => widget.song;
+  AppSettings get settings => widget.settings;
+
+  /// Semitonos que se aplican al mostrar (0 si se ven las originales).
+  int get _shown => sounding ? song.transpose : 0;
+
+  Future<void> _transpose() async {
+    final key = song.key;
+    if (key == null) return;
+    final semitones = await pickTranspose(
+      context,
+      original: key,
+      current: song.transpose,
+      range: settings.transposeRange,
+      notation: settings.notation,
+    );
+    if (semitones == null) return;
+    song
+      ..transpose = semitones
+      ..showOriginal = false;
+    await _save();
+  }
+
+  Future<void> _save() async {
+    await widget.repo.save(song);
+    if (mounted) setState(() {});
+  }
+
+  Future<void> _rename() async {
+    final title = await askText(context, title: 'Título de la canción', initial: song.title);
+    if (title == null || title.isEmpty) return;
+    song.title = title;
+    await _save();
+  }
+
+  Future<void> _renameSection(SectionDef section) async {
+    final result = await askSection(context, section);
+    if (result == null) return;
+    section
+      ..label = result.$1
+      ..kind = result.$2;
+    await _save();
+  }
+
+  SectionDef _resolve(SectionChoice choice) => switch (choice) {
+        ExistingSection(:final section) => section,
+        NewSection(:final label, :final kind) => song.newSection(label: label, kind: kind),
+      };
+
+  Future<void> _startSectionAt(int index) async {
+    // Cada sección es propia: aunque se repita la progresión más adelante,
+    // es otra sección (se puede llamar igual).
+    final choice = await chooseSection(
+      context,
+      title: 'Sección que empieza en este acorde',
+      existing: const [],
+      suggestedLabel: song.nextPartLabel(),
+    );
+    if (choice == null) return;
+    song.startSectionAt(index, _resolve(choice));
+    await _save();
+  }
+
+  Future<void> _removeOccurrence(int occurrence) async {
+    final o = song.arrangement[occurrence];
+    final ok = await confirm(
+      context,
+      title: 'Eliminar sección',
+      message: '¿Eliminar "${song.section(o.sectionId)?.label}" y sus ${o.length} acordes? '
+          'La grabación original no se borra.',
+    );
+    if (!ok) return;
+    song.removeOccurrence(occurrence);
+    SongAnalyzer.analyze(song, sections: false);
+    await _save();
+  }
+
+  Future<void> _deleteChord(int index) async {
+    song.removeChordAt(index);
+    SongAnalyzer.analyze(song, sections: false);
+    await _save();
+  }
+
+  Future<void> _mergeWithPrevious(int occurrence) async {
+    song.mergeWithPrevious(occurrence);
+    await _save();
+  }
+
+  Future<void> _setRepeats(int occurrence, int repeats) async {
+    song.setRepeats(occurrence, repeats);
+    SongAnalyzer.analyze(song, sections: false);
+    await _save();
+  }
+
+  Future<void> _removeModulation(int region) async {
+    final r = song.keyRegions[region];
+    final ok = await confirm(
+      context,
+      title: 'Quitar modulación',
+      message: '¿Toda la canción sigue en ${song.keyRegions[region - 1].key.label(settings.notation)} '
+          'y no cambia a ${r.key.label(settings.notation)} en el acorde ${r.start + 1}?',
+      action: 'Quitar',
+    );
+    if (!ok) return;
+    song.removeModulation(region);
+    SongAnalyzer.analyze(song, sections: false);
+    await _save();
+  }
+
+  Future<void> _redetectModulations() async {
+    song.keyRegionsManual = false;
+    SongAnalyzer.analyze(song, sections: false);
+    await _save();
+  }
+
+  Future<void> _redetectParts() async {
+    final ok = await confirm(
+      context,
+      title: 'Volver a detectar partes',
+      message: 'Se reemplazarán las secciones actuales (nombres y vueltas) por partes '
+          'detectadas por pausas y repeticiones.',
+      action: 'Detectar',
+    );
+    if (!ok) return;
+    SongAnalyzer.analyze(song);
+    await _save();
+  }
+
+  Future<void> _changeKey() async {
+    final result = await pickKey(context, current: song.keyManual ? song.key : null, notation: settings.notation);
+    if (result == null) return;
+    final (key,) = result;
+    if (key == null) {
+      song.keyManual = false;
+      SongAnalyzer.analyze(song, sections: false);
+    } else {
+      song
+        ..key = key
+        ..keyManual = true;
+    }
+    await _save();
+  }
+
+  Future<void> _tapChord(int index, SectionOccurrence occurrence) async {
+    if (!editing) return _editChord(index, occurrence: occurrence);
+    final action = await showModalBottomSheet<String>(
+      context: context,
+      builder: (context) => SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            ListTile(
+              leading: const Icon(Icons.content_cut),
+              title: Text(index == occurrence.start
+                  ? 'Cambiar la sección desde aquí'
+                  : 'Empezar una sección nueva aquí'),
+              onTap: () => Navigator.pop(context, 'split'),
+            ),
+            ListTile(
+              leading: const Icon(Icons.edit),
+              title: const Text('Corregir acorde o anotar tiempos'),
+              onTap: () => Navigator.pop(context, 'chord'),
+            ),
+            ListTile(
+              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
+              title: Text(
+                'Eliminar este acorde',
+                style: TextStyle(color: Theme.of(context).colorScheme.error),
+              ),
+              onTap: () => Navigator.pop(context, 'delete'),
+            ),
+          ],
+        ),
+      ),
+    );
+    switch (action) {
+      case 'split':
+        await _startSectionAt(index);
+      case 'chord':
+        await _editChord(index, occurrence: occurrence);
+      case 'delete':
+        await _deleteChord(index);
+    }
+  }
+
+  /// En la vista por secciones, un cambio se aplica a todas las vueltas y
+  /// apariciones de esa sección que tenían el mismo acorde en esa posición.
+  Future<void> _editChord(int index, {SectionOccurrence? occurrence}) async {
+    final event = song.chords[index];
+    final edit = await editChord(context, event: event, musicKey: song.keyAt(index), settings: settings);
+    if (edit == null) return;
+
+    final targets = <int>{index};
+    if (occurrence != null && view == SongView.sections && !editing) {
+      final offset = (index - occurrence.start) % occurrence.passLength;
+      for (final o in song.arrangement.where((o) => o.sectionId == occurrence.sectionId)) {
+        for (var i = o.start + offset; i < o.end; i += o.passLength) {
+          if (song.chords[i].chord == event.chord) targets.add(i);
+        }
+      }
+    }
+
+    switch (edit) {
+      case ReplaceChord(:final chord):
+        for (final i in targets) {
+          final e = song.chords[i];
+          if (e.chord == chord) continue;
+          e
+            ..alternatives = [e.chord, ...e.alternatives.where((a) => a != chord)]
+            ..chord = chord
+            ..edited = true;
+        }
+      case SetBeats(:final beats):
+        for (final i in targets) {
+          song.chords[i].beats = beats;
+        }
+      case DeleteChord():
+        for (final i in targets.toList()..sort((a, b) => b.compareTo(a))) {
+          song.removeChordAt(i);
+        }
+    }
+    SongAnalyzer.analyze(song, sections: false);
+    await _save();
+  }
+
+  Future<void> _delete() async {
+    final ok = await confirm(
+      context,
+      title: 'Eliminar canción',
+      message: '¿Eliminar "${song.title}"? No se puede deshacer.',
+    );
+    if (!ok) return;
+    await widget.repo.delete(song);
+    if (mounted) Navigator.of(context).pop();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final linear = editing || view == SongView.linear;
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) => Scaffold(
+        appBar: AppBar(
+          title: InkWell(
+            onTap: _rename,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 8),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Flexible(child: Text(song.title, overflow: TextOverflow.ellipsis)),
+                  const SizedBox(width: 8),
+                  const Icon(Icons.edit, size: 18),
+                ],
+              ),
+            ),
+          ),
+          actions: [
+            if (editing)
+              FilledButton.icon(
+                onPressed: () => setState(() => editing = false),
+                icon: const Icon(Icons.check),
+                label: const Text('Listo'),
+              )
+            else ...[
+              FilledButton.icon(
+                onPressed: song.chords.isEmpty
+                    ? null
+                    : () => Navigator.of(context).push(
+                          MaterialPageRoute(
+                            builder: (_) => PlayPage(
+                              song: song,
+                              repo: widget.repo,
+                              midi: widget.midi,
+                              engine: widget.engine,
+                              settings: settings,
+                            ),
+                          ),
+                        // Al volver se refleja lo que se cambió al tocar (transporte, vista).
+                        ).then((_) => mounted ? setState(() {}) : null),
+                icon: const Icon(Icons.play_arrow),
+                label: const Text('Tocar'),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: () => setState(() {
+                  song.ensureArrangement();
+                  editing = true;
+                }),
+                icon: const Icon(Icons.content_cut),
+                label: const Text('Editar secciones'),
+              ),
+              const SizedBox(width: 12),
+              SegmentedButton<SongView>(
+                segments: const [
+                  ButtonSegment(value: SongView.sections, label: Text('Secciones')),
+                  ButtonSegment(value: SongView.linear, label: Text('Lineal')),
+                ],
+                selected: {view},
+                onSelectionChanged: (s) => setState(() => view = s.first),
+              ),
+            ],
+            if (song.transpose != 0 && song.key != null) ...[
+              const SizedBox(width: 12),
+              SegmentedButton<bool>(
+                segments: [
+                  ButtonSegment(
+                    value: true,
+                    label: Text('Suena ${song.soundingKey!.name(settings.notation)}'),
+                  ),
+                  ButtonSegment(
+                    value: false,
+                    label: Text('Original ${song.key!.name(settings.notation)}'),
+                  ),
+                ],
+                selected: {sounding},
+                onSelectionChanged: (s) {
+                  song.showOriginal = !s.first;
+                  _save();
+                },
+              ),
+            ],
+            const SizedBox(width: 4),
+            SettingsButton(settings: settings),
+            PopupMenuButton<String>(
+              onSelected: (v) => switch (v) {
+                'parts' => _redetectParts(),
+                'modulations' => _redetectModulations(),
+                'delete' => _delete(),
+                _ => null,
+              },
+              itemBuilder: (_) => const [
+                PopupMenuItem(value: 'parts', child: Text('Volver a detectar partes')),
+                PopupMenuItem(value: 'modulations', child: Text('Volver a detectar modulaciones')),
+                PopupMenuItem(value: 'delete', child: Text('Eliminar canción')),
+              ],
+            ),
+          ],
+        ),
+        body: Padding(
+          padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: [
+              Expanded(
+                child: song.chords.isEmpty
+                    ? const Center(child: Text('Sin acordes'))
+                    : linear
+                        ? _linear()
+                        : _bySections(),
+              ),
+              const SizedBox(width: 16),
+              SizedBox(
+                width: 320,
+                child: SongKeyPanel(
+                  song: song,
+                  notation: settings.notation,
+                  onChangeKey: _changeKey,
+                  onRemoveModulation: _removeModulation,
+                  onTranspose: _transpose,
+                ),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  List<SectionOccurrence> get _occurrences => song.arrangement.isEmpty
+      ? [SectionOccurrence(sectionId: '', start: 0, end: song.chords.length)]
+      : song.arrangement;
+
+  Widget _linear() {
+    final occurrences = _occurrences;
+    final scheme = Theme.of(context).colorScheme;
+    return ListView(
+      children: [
+        if (editing)
+          Container(
+            margin: const EdgeInsets.only(top: 8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: scheme.secondaryContainer,
+              borderRadius: BorderRadius.circular(12),
+            ),
+            child: Text(
+              'Toca un acorde para empezar una sección ahí o eliminarlo. En cada sección puedes '
+              'renombrarla, cambiar sus vueltas seguidas (×N), unirla con la anterior o eliminarla.',
+              style: TextStyle(color: scheme.onSecondaryContainer),
+            ),
+          ),
+        for (final (i, o) in occurrences.indexed)
+          _block(o, occurrenceIndex: i, appearance: _appearance(occurrences, i)),
+      ],
+    );
+  }
+
+  Widget _bySections() {
+    final occurrences = _occurrences;
+    return ListView(
+      children: [
+        _order(occurrences),
+        const SizedBox(height: 8),
+        for (final s in song.sections)
+          if (occurrences.where((o) => o.sectionId == s.id).toList() case final list when list.isNotEmpty)
+            _block(list.first, appearances: list.length, firstPassOnly: true),
+      ],
+    );
+  }
+
+  int _appearance(List<SectionOccurrence> all, int index) =>
+      all.take(index + 1).where((o) => o.sectionId == all[index].sectionId).length;
+
+  Widget _order(List<SectionOccurrence> occurrences) {
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 4),
+      child: Wrap(
+        spacing: 6,
+        runSpacing: 6,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: [
+          Text('Orden:', style: TextStyle(color: scheme.onSurfaceVariant)),
+          for (final o in occurrences)
+            Chip(
+              label: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Text(song.section(o.sectionId)?.label ?? '—'),
+                  if (o.repeats > 1) ...[
+                    const SizedBox(width: 6),
+                    RepeatBadge(o.repeats, fontSize: 13),
+                  ],
+                ],
+              ),
+              visualDensity: VisualDensity.compact,
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _header(
+    SectionDef section,
+    SectionOccurrence occurrence, {
+    int? appearances,
+    int? appearance,
+    int? occurrenceIndex,
+  }) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final muted = text.titleMedium?.copyWith(color: scheme.onSurfaceVariant);
+    final title = Row(
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        Text(section.label, style: text.titleLarge?.copyWith(color: scheme.primary)),
+        if (occurrence.repeats > 1) ...[
+          const SizedBox(width: 10),
+          RepeatBadge(occurrence.repeats, fontSize: 18),
+        ],
+        if (appearances != null && appearances > 1) Text('  · aparece $appearances veces', style: muted),
+        if (appearance != null && appearance > 1)
+          Text('  ($appearanceª vez)', style: text.titleSmall?.copyWith(color: scheme.onSurfaceVariant)),
+      ],
+    );
+    if (!editing || occurrenceIndex == null) {
+      return InkWell(
+        borderRadius: BorderRadius.circular(8),
+        onTap: () => _renameSection(section),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [title, const SizedBox(width: 6), Icon(Icons.edit, size: 14, color: scheme.onSurfaceVariant)],
+          ),
+        ),
+      );
+    }
+    return Wrap(
+      spacing: 8,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      children: [
+        title,
+        // Vueltas: la secuencia lineal sigue siendo la interpretación completa.
+        Container(
+          decoration: BoxDecoration(
+            border: Border.all(color: scheme.outlineVariant),
+            borderRadius: BorderRadius.circular(20),
+          ),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              IconButton(
+                tooltip: 'Una vuelta menos',
+                visualDensity: VisualDensity.compact,
+                onPressed: occurrence.repeats > 1
+                    ? () => _setRepeats(occurrenceIndex, occurrence.repeats - 1)
+                    : null,
+                icon: const Icon(Icons.remove, size: 18),
+              ),
+              Text(
+                '×${occurrence.repeats}',
+                style: text.titleMedium?.copyWith(color: repeatColor, fontWeight: FontWeight.w700),
+              ),
+              IconButton(
+                tooltip: 'Una vuelta más',
+                visualDensity: VisualDensity.compact,
+                onPressed: occurrence.repeats < 8
+                    ? () => _setRepeats(occurrenceIndex, occurrence.repeats + 1)
+                    : null,
+                icon: const Icon(Icons.add, size: 18),
+              ),
+            ],
+          ),
+        ),
+        TextButton.icon(
+          onPressed: () => _renameSection(section),
+          icon: const Icon(Icons.edit, size: 16),
+          label: const Text('Renombrar'),
+        ),
+        if (occurrenceIndex > 0)
+          TextButton.icon(
+            onPressed: () => _mergeWithPrevious(occurrenceIndex),
+            icon: const Icon(Icons.merge, size: 16),
+            label: const Text('Unir con la anterior'),
+          ),
+        TextButton.icon(
+          style: TextButton.styleFrom(foregroundColor: scheme.error),
+          onPressed: () => _removeOccurrence(occurrenceIndex),
+          icon: const Icon(Icons.delete_outline, size: 16),
+          label: const Text('Eliminar sección'),
+        ),
+      ],
+    );
+  }
+
+  Widget _block(
+    SectionOccurrence occurrence, {
+    int? appearances,
+    int? appearance,
+    int? occurrenceIndex,
+    bool firstPassOnly = false,
+  }) {
+    final scheme = Theme.of(context).colorScheme;
+    final section = song.section(occurrence.sectionId);
+    final modulations = {
+      for (final (i, r) in song.keyRegions.indexed)
+        if (i > 0) r.start: (i, r.key),
+    };
+    final end = firstPassOnly ? occurrence.start + occurrence.passLength : occurrence.end;
+
+    return Padding(
+      padding: const EdgeInsets.only(top: 16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          if (section != null)
+            _header(
+              section,
+              occurrence,
+              appearances: appearances,
+              appearance: appearance,
+              occurrenceIndex: occurrenceIndex,
+            ),
+          const SizedBox(height: 8),
+          Wrap(
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: [
+              for (var i = occurrence.start; i < end; i++) ...[
+                if (!firstPassOnly && occurrence.repeats > 1 && i > occurrence.start &&
+                    (i - occurrence.start) % occurrence.passLength == 0)
+                  _passMarker(occurrence.passOf(i)),
+                if (modulations[i] case (final region, final key))
+                  Tooltip(
+                    message: 'Toca para quitar esta modulación',
+                    child: InkWell(
+                      borderRadius: BorderRadius.circular(12),
+                      onTap: () => _removeModulation(region),
+                      child: Container(
+                        height: 84,
+                        padding: const EdgeInsets.symmetric(horizontal: 10),
+                        decoration: BoxDecoration(
+                          border: Border.all(color: scheme.tertiary),
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            Icon(Icons.trending_up, color: scheme.tertiary),
+                            const SizedBox(width: 6),
+                            Text(
+                              key.transpose(_shown).label(settings.notation),
+                              style: TextStyle(color: scheme.tertiary),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ChordCell(
+                  chord: song.chords[i].chord.transpose(_shown),
+                  musicKey: song.keyAt(i)?.transpose(_shown),
+                  settings: settings,
+                  confidence: song.chords[i].confidence,
+                  beats: song.chords[i].beats,
+                  edited: song.chords[i].edited,
+                  highlight: editing && i == occurrence.start,
+                  onTap: () => _tapChord(i, occurrence),
+                ),
+              ],
+            ],
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _passMarker(int pass) {
+    final scheme = Theme.of(context).colorScheme;
+    // Row (no alignment) para que el marcador mida lo que su texto.
+    return SizedBox(
+      height: 84,
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          const SizedBox(width: 8),
+          Text(
+            '$passª vuelta',
+            style: TextStyle(color: scheme.onSurfaceVariant, fontStyle: FontStyle.italic),
+          ),
+          const SizedBox(width: 8),
+        ],
+      ),
+    );
+  }
+}
