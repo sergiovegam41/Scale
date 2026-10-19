@@ -1,6 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Importar con IA (la API de Claude) necesita internet. -->
+    <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- Detectar la tonalidad del cantante por el micrófono. -->
+    <uses-permission android:name="android.permission.RECORD_AUDIO"/>
     <application
-        android:label="scale"
+        android:label="Scale"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

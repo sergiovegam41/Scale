@@ -71,6 +71,20 @@ class MusicKey {
 
   List<int> get scale => [for (final i in isMajor ? _majorScale : _minorScale) (tonic + i) % 12];
 
+  /// Tríadas de cada grado (en menor, el V mayor: el habitual en canciones).
+  List<Chord> get diatonicChords {
+    const majorQualities = [
+      ChordQuality.major, ChordQuality.minor, ChordQuality.minor, ChordQuality.major,
+      ChordQuality.major, ChordQuality.minor, ChordQuality.diminished,
+    ];
+    const minorQualities = [
+      ChordQuality.minor, ChordQuality.diminished, ChordQuality.major, ChordQuality.minor,
+      ChordQuality.major, ChordQuality.major, ChordQuality.major,
+    ];
+    final qualities = isMajor ? majorQualities : minorQualities;
+    return [for (final (i, pc) in scale.indexed) Chord(pc, qualities[i])];
+  }
+
   /// Pertenece a la escala (en menor se acepta también la sensible, armónica).
   bool fits(int pc) {
     final d = degreeOf(pc);

@@ -10,6 +10,8 @@ import '../storage/song_repository.dart';
 import '../widgets/chord_cell.dart';
 import '../widgets/repeat_badge.dart';
 import '../widgets/settings_sheet.dart';
+import 'song_list_page.dart';
+import 'song_page.dart' show SongOpener;
 
 enum PlayMode { original, live }
 
@@ -22,7 +24,15 @@ class PlayPage extends StatefulWidget {
     required this.midi,
     required this.engine,
     required this.settings,
+    this.initialMode,
+    this.onOpenSong,
   });
+
+  /// Modo con el que empezar (el de la canción anterior de la lista).
+  final PlayMode? initialMode;
+
+  /// Para pasar a la canción anterior o siguiente de la lista para tocar.
+  final SongOpener? onOpenSong;
 
   final Song song;
   final SongRepository repo;
@@ -37,7 +47,7 @@ class PlayPage extends StatefulWidget {
 class _PlayPageState extends State<PlayPage> {
   late final SongPlayer player = SongPlayer(song: widget.song, midi: widget.midi);
   late final LiveFollow live = LiveFollow(song: widget.song, engine: widget.engine);
-  late PlayMode mode = player.canPlay ? PlayMode.original : PlayMode.live;
+  late PlayMode mode = widget.initialMode == PlayMode.live || !player.canPlay ? PlayMode.live : PlayMode.original;
   final Map<int, GlobalKey> _cellKeys = {};
   int? _scrolledTo;
 
@@ -65,11 +75,17 @@ class _PlayPageState extends State<PlayPage> {
 
   late final int _previousLayer;
 
+  /// La pantalla de tocar que manda sobre la capa del motor. Al pasar de una
+  /// canción a la siguiente, la anterior se cierra después de abrir la nueva:
+  /// solo la última devuelve la capa que había antes de empezar a tocar.
+  static _PlayPageState? _active;
+
   @override
   void initState() {
     super.initState();
     // Para tocar con el transporte de la canción, el motor usa la misma capa.
-    _previousLayer = widget.engine.layer;
+    _previousLayer = _active?._previousLayer ?? widget.engine.layer;
+    _active = this;
     widget.engine.layer = song.transpose;
   }
 
@@ -77,7 +93,10 @@ class _PlayPageState extends State<PlayPage> {
   void dispose() {
     player.dispose();
     live.dispose();
-    widget.engine.layer = _previousLayer;
+    if (_active == this) {
+      widget.engine.layer = _previousLayer;
+      _active = null;
+    }
     super.dispose();
   }
 
@@ -119,6 +138,14 @@ class _PlayPageState extends State<PlayPage> {
       ChordDisplay.degrees => key == null ? name : fmt.nashville(chord, key),
       ChordDisplay.both => key == null ? name : '$name  ·  ${fmt.nashville(chord, key)}',
     };
+  }
+
+  /// Nota de apoyo de la sección donde está el acorde [index], si tiene.
+  String? _noteAt(int? index) {
+    if (index == null) return null;
+    final o = song.occurrenceAt(index);
+    final note = o == null ? null : song.section(o.sectionId)?.note;
+    return note == null || note.trim().isEmpty ? null : note.trim();
   }
 
   String _whereLabel(int index) {
@@ -187,6 +214,14 @@ class _PlayPageState extends State<PlayPage> {
                   onSelectionChanged: (s) => _setSounding(s.first),
                 ),
               ],
+              const SizedBox(width: 8),
+              // Algo está mal: al editor, probando, sin perder el hilo.
+              OutlinedButton.icon(
+                // Se sigue desde el acorde en el que ibas.
+                onPressed: () => Navigator.of(context).pop('edit:${_current ?? -1}'),
+                icon: const Icon(Icons.edit_note),
+                label: const Text('Editar'),
+              ),
               SettingsButton(settings: settings),
               const SizedBox(width: 8),
             ],
@@ -199,6 +234,7 @@ class _PlayPageState extends State<PlayPage> {
                 const SizedBox(height: 12),
                 Expanded(child: _chart(current, _next)),
                 if (mode == PlayMode.original) _transport(),
+                _setlist(),
               ],
             ),
           ),
@@ -249,7 +285,7 @@ class _PlayPageState extends State<PlayPage> {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
 
-    Widget card(String title, int? index, {required bool main}) => Card(
+    Widget card(String title, int? index, {required bool main, String? note}) => Card(
           color: main ? scheme.primaryContainer : null,
           child: Padding(
             padding: const EdgeInsets.all(16),
@@ -257,6 +293,16 @@ class _PlayPageState extends State<PlayPage> {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: text.titleMedium),
+                if (note != null)
+                  Text(
+                    '📝 $note',
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: text.titleMedium?.copyWith(
+                      color: main ? scheme.onPrimaryContainer : scheme.tertiary,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
                 Expanded(
                   child: Center(
                     child: FittedBox(
@@ -282,12 +328,20 @@ class _PlayPageState extends State<PlayPage> {
           ),
         );
 
+    // La nota de la sección actual se ve en "Ahora"; la de la siguiente
+    // sección se anticipa en "Sigue" cuando el próximo acorde ya es de otra.
+    final currentNote = _noteAt(current ?? next);
+    final nextSection = next == null ? null : song.occurrenceAt(next);
+    final nextNote = next != null && nextSection != (current == null ? null : song.occurrenceAt(current))
+        ? _noteAt(next)
+        : null;
+
     return Row(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        Expanded(flex: 3, child: card('Ahora', current, main: true)),
+        Expanded(flex: 3, child: card('Ahora', current, main: true, note: current == null ? null : currentNote)),
         const SizedBox(width: 12),
-        Expanded(flex: 2, child: card('Sigue', next, main: false)),
+        Expanded(flex: 2, child: card('Sigue', next, main: false, note: nextNote ?? (current == null ? currentNote : null))),
         const SizedBox(width: 12),
         SizedBox(width: 300, child: mode == PlayMode.live ? _liveStatus() : _playbackInfo()),
       ],
@@ -329,6 +383,16 @@ class _PlayPageState extends State<PlayPage> {
                 style: text.bodyMedium?.copyWith(color: scheme.tertiary),
               ),
             const Spacer(),
+            if (f.status == FollowStatus.finished && widget.onOpenSong != null)
+              if (_neighbors.$2 case final next?)
+                Padding(
+                  padding: const EdgeInsets.only(bottom: 4),
+                  child: FilledButton.icon(
+                    onPressed: () => _goTo(next),
+                    icon: const Icon(Icons.skip_next),
+                    label: Text('Siguiente: ${next.title}', overflow: TextOverflow.ellipsis),
+                  ),
+                ),
             Tooltip(
               message: 'También puedes tocar un acorde de la partitura para saltar ahí.',
               child: TextButton.icon(
@@ -339,6 +403,67 @@ class _PlayPageState extends State<PlayPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  /// Canción anterior y siguiente de la lista para tocar.
+  (Song?, Song?, int, int) get _neighbors {
+    final list = SongListPage.liveList(widget.repo, settings);
+    final i = list.indexWhere((s) => s.id == song.id);
+    if (i < 0) return (null, null, -1, list.length);
+    return (i > 0 ? list[i - 1] : null, i + 1 < list.length ? list[i + 1] : null, i, list.length);
+  }
+
+  void _goTo(Song other) {
+    final open = widget.onOpenSong;
+    if (open == null) return;
+    Navigator.of(context).popUntil((route) => route.isFirst);
+    open(other, play: mode);
+  }
+
+  Widget _setlist() {
+    final (previous, next, index, total) = _neighbors;
+    if (widget.onOpenSong == null || index < 0) return const SizedBox.shrink();
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Padding(
+      padding: const EdgeInsets.only(top: 8),
+      child: Row(
+        children: [
+          Expanded(
+            child: previous == null
+                ? const SizedBox.shrink()
+                : Align(
+                    alignment: Alignment.centerLeft,
+                    child: TextButton.icon(
+                      onPressed: () => _goTo(previous),
+                      icon: const Icon(Icons.skip_previous),
+                      label: Text(previous.title, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+          ),
+          Text(
+            'Canción ${index + 1} de $total',
+            style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+          ),
+          Expanded(
+            child: next == null
+                ? Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('Última de la lista', style: TextStyle(color: scheme.onSurfaceVariant)),
+                  )
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => _goTo(next),
+                      iconAlignment: IconAlignment.end,
+                      icon: const Icon(Icons.skip_next),
+                      label: Text('Siguiente: ${next.title}', overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+          ),
+        ],
       ),
     );
   }
@@ -453,6 +578,16 @@ class _PlayPageState extends State<PlayPage> {
                     if (o.repeats > 1) ...[
                       const SizedBox(width: 8),
                       RepeatBadge(o.repeats, fontSize: 14),
+                    ],
+                    if (_noteAt(o.start) case final note?) ...[
+                      const SizedBox(width: 12),
+                      Flexible(
+                        child: Text(
+                          '📝 $note',
+                          overflow: TextOverflow.ellipsis,
+                          style: text.bodyLarge?.copyWith(color: scheme.tertiary),
+                        ),
+                      ),
                     ],
                   ],
                 ),

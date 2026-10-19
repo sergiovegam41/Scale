@@ -6,9 +6,13 @@ import '../midi/keyboard_state.dart';
 import '../midi/midi_service.dart';
 import '../settings.dart';
 import '../storage/song_repository.dart';
+import '../voice/singer_engine.dart';
 import 'live_page.dart';
+import 'play_page.dart';
+import 'singer_page.dart';
 import 'song_list_page.dart';
 import 'song_page.dart';
+import 'tools_page.dart';
 
 /// Navegación principal: tocar en vivo / biblioteca de canciones.
 class HomePage extends StatefulWidget {
@@ -33,12 +37,31 @@ class HomePage extends StatefulWidget {
 
 class _HomePageState extends State<HomePage> {
   int index = 0;
+  final SingerEngine singer = SingerEngine();
 
-  void openSong(Song song) {
+  static const int _singerTab = 2;
+
+  @override
+  void dispose() {
+    singer.dispose();
+    super.dispose();
+  }
+
+  void _select(int i) {
+    // El micrófono solo escucha mientras la pestaña del cantante está abierta.
+    if (i != _singerTab) singer.stop();
+    setState(() => index = i);
+  }
+
+  /// Abre una canción; con [play], directo a tocarla en ese modo.
+  void openSong(Song song, {bool edit = false, PlayMode? play}) {
     Navigator.of(context).push(
       MaterialPageRoute(
         builder: (_) => SongPage(
           song: song,
+          startEditing: edit,
+          startPlaying: play,
+          onOpenSong: openSong,
           repo: widget.repo,
           settings: widget.settings,
           midi: widget.midi,
@@ -59,10 +82,12 @@ class _HomePageState extends State<HomePage> {
               selectedIndex: index,
               labelType: NavigationRailLabelType.all,
               // No se cambia de pantalla a mitad de una grabación.
-              onDestinationSelected: widget.engine.recording ? null : (i) => setState(() => index = i),
+              onDestinationSelected: widget.engine.recording ? null : _select,
               destinations: const [
                 NavigationRailDestination(icon: Icon(Icons.piano), label: Text('En vivo')),
                 NavigationRailDestination(icon: Icon(Icons.library_music), label: Text('Canciones')),
+                NavigationRailDestination(icon: Icon(Icons.mic), label: Text('Cantante')),
+                NavigationRailDestination(icon: Icon(Icons.donut_large), label: Text('Herramientas')),
               ],
             ),
           ),
@@ -79,7 +104,14 @@ class _HomePageState extends State<HomePage> {
                   repo: widget.repo,
                   onOpenSong: openSong,
                 ),
-                SongListPage(repo: widget.repo, settings: widget.settings, onOpen: openSong),
+                SongListPage(
+                  repo: widget.repo,
+                  settings: widget.settings,
+                  onOpen: openSong,
+                  onCreate: (song) => openSong(song, edit: true),
+                ),
+                SingerPage(engine: singer, repo: widget.repo, settings: widget.settings),
+                ToolsPage(midi: widget.midi, settings: widget.settings),
               ],
             ),
           ),

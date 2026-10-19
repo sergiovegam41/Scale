@@ -6,6 +6,7 @@ import '../midi/midi_service.dart';
 import '../settings.dart';
 import '../storage/song_repository.dart';
 import 'play_page.dart';
+import 'song_editor.dart';
 import '../widgets/chord_cell.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/repeat_badge.dart';
@@ -13,6 +14,9 @@ import '../widgets/settings_sheet.dart';
 import '../widgets/song_key_panel.dart';
 
 enum SongView { sections, linear }
+
+/// Abrir una canción (para ir a la siguiente de la lista al tocar).
+typedef SongOpener = void Function(Song song, {bool edit, PlayMode? play});
 
 /// Una canción: la secuencia de acordes como partitura y la tonalidad en la esquina.
 class SongPage extends StatefulWidget {
@@ -23,7 +27,17 @@ class SongPage extends StatefulWidget {
     required this.settings,
     required this.midi,
     required this.engine,
+    this.startEditing = false,
+    this.startPlaying,
+    this.onOpenSong,
   });
+
+  /// Abrir directo tocando, en este modo (al pasar a la siguiente canción).
+  final PlayMode? startPlaying;
+  final SongOpener? onOpenSong;
+
+  /// Abrir directo en el editor (canción nueva).
+  final bool startEditing;
 
   final Song song;
   final SongRepository repo;
@@ -38,9 +52,13 @@ class SongPage extends StatefulWidget {
 class _SongPageState extends State<SongPage> {
   SongView view = SongView.sections;
 
-  /// Modo de edición de secciones: se ve todo en lineal y cada acorde puede
-  /// empezar una sección.
-  bool editing = false;
+  /// Editor (arrastrar acordes, secciones como texto, probar con el piano).
+  late bool editing = widget.startEditing;
+
+  /// Al entrar al editor desde "Tocar → Editar", empezar probando desde el
+  /// acorde en el que se iba.
+  bool _editTesting = false;
+  int? _editFrom;
 
   /// Con capa de transpose: ver lo que suena o las figuras originales. Se
   /// guarda con la canción.
@@ -86,57 +104,8 @@ class _SongPageState extends State<SongPage> {
     if (result == null) return;
     section
       ..label = result.$1
-      ..kind = result.$2;
-    await _save();
-  }
-
-  SectionDef _resolve(SectionChoice choice) => switch (choice) {
-        ExistingSection(:final section) => section,
-        NewSection(:final label, :final kind) => song.newSection(label: label, kind: kind),
-      };
-
-  Future<void> _startSectionAt(int index) async {
-    // Cada sección es propia: aunque se repita la progresión más adelante,
-    // es otra sección (se puede llamar igual).
-    final choice = await chooseSection(
-      context,
-      title: 'Sección que empieza en este acorde',
-      existing: const [],
-      suggestedLabel: song.nextPartLabel(),
-    );
-    if (choice == null) return;
-    song.startSectionAt(index, _resolve(choice));
-    await _save();
-  }
-
-  Future<void> _removeOccurrence(int occurrence) async {
-    final o = song.arrangement[occurrence];
-    final ok = await confirm(
-      context,
-      title: 'Eliminar sección',
-      message: '¿Eliminar "${song.section(o.sectionId)?.label}" y sus ${o.length} acordes? '
-          'La grabación original no se borra.',
-    );
-    if (!ok) return;
-    song.removeOccurrence(occurrence);
-    SongAnalyzer.analyze(song, sections: false);
-    await _save();
-  }
-
-  Future<void> _deleteChord(int index) async {
-    song.removeChordAt(index);
-    SongAnalyzer.analyze(song, sections: false);
-    await _save();
-  }
-
-  Future<void> _mergeWithPrevious(int occurrence) async {
-    song.mergeWithPrevious(occurrence);
-    await _save();
-  }
-
-  Future<void> _setRepeats(int occurrence, int repeats) async {
-    song.setRepeats(occurrence, repeats);
-    SongAnalyzer.analyze(song, sections: false);
+      ..kind = result.$2
+      ..note = result.$3.isEmpty ? null : result.$3;
     await _save();
   }
 
@@ -189,57 +158,21 @@ class _SongPageState extends State<SongPage> {
     await _save();
   }
 
-  Future<void> _tapChord(int index, SectionOccurrence occurrence) async {
-    if (!editing) return _editChord(index, occurrence: occurrence);
-    final action = await showModalBottomSheet<String>(
-      context: context,
-      builder: (context) => SafeArea(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            ListTile(
-              leading: const Icon(Icons.content_cut),
-              title: Text(index == occurrence.start
-                  ? 'Cambiar la sección desde aquí'
-                  : 'Empezar una sección nueva aquí'),
-              onTap: () => Navigator.pop(context, 'split'),
-            ),
-            ListTile(
-              leading: const Icon(Icons.edit),
-              title: const Text('Corregir acorde o anotar tiempos'),
-              onTap: () => Navigator.pop(context, 'chord'),
-            ),
-            ListTile(
-              leading: Icon(Icons.delete_outline, color: Theme.of(context).colorScheme.error),
-              title: Text(
-                'Eliminar este acorde',
-                style: TextStyle(color: Theme.of(context).colorScheme.error),
-              ),
-              onTap: () => Navigator.pop(context, 'delete'),
-            ),
-          ],
-        ),
-      ),
-    );
-    switch (action) {
-      case 'split':
-        await _startSectionAt(index);
-      case 'chord':
-        await _editChord(index, occurrence: occurrence);
-      case 'delete':
-        await _deleteChord(index);
-    }
-  }
-
   /// En la vista por secciones, un cambio se aplica a todas las vueltas y
   /// apariciones de esa sección que tenían el mismo acorde en esa posición.
   Future<void> _editChord(int index, {SectionOccurrence? occurrence}) async {
     final event = song.chords[index];
-    final edit = await editChord(context, event: event, musicKey: song.keyAt(index), settings: settings);
+    final edit = await editChord(
+      context,
+      event: event,
+      musicKey: song.keyAt(index),
+      settings: settings,
+      piano: widget.engine,
+    );
     if (edit == null) return;
 
     final targets = <int>{index};
-    if (occurrence != null && view == SongView.sections && !editing) {
+    if (occurrence != null && view == SongView.sections) {
       final offset = (index - occurrence.start) % occurrence.passLength;
       for (final o in song.arrangement.where((o) => o.sectionId == occurrence.sectionId)) {
         for (var i = o.start + offset; i < o.end; i += o.passLength) {
@@ -266,6 +199,8 @@ class _SongPageState extends State<SongPage> {
         for (final i in targets.toList()..sort((a, b) => b.compareTo(a))) {
           song.removeChordAt(i);
         }
+      case InsertNear() || SplitHere() || FollowFromHere():
+        return; // solo en el editor
     }
     SongAnalyzer.analyze(song, sections: false);
     await _save();
@@ -282,9 +217,62 @@ class _SongPageState extends State<SongPage> {
     if (mounted) Navigator.of(context).pop();
   }
 
+  void _edit({bool testing = false, int? from}) => setState(() {
+        editing = true;
+        _editTesting = testing;
+        _editFrom = from;
+      });
+
+  @override
+  void initState() {
+    super.initState();
+    final mode = widget.startPlaying;
+    if (mode != null && song.chords.isNotEmpty) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _play(mode: mode);
+      });
+    }
+  }
+
+  Future<void> _play({PlayMode? mode}) async {
+    final result = await Navigator.of(context).push<String>(
+      MaterialPageRoute(
+        builder: (_) => PlayPage(
+          song: song,
+          repo: widget.repo,
+          midi: widget.midi,
+          engine: widget.engine,
+          settings: settings,
+          initialMode: mode,
+          onOpenSong: widget.onOpenSong,
+        ),
+      ),
+    );
+    if (!mounted) return;
+    // "Editar" desde Tocar: al editor, probando, para corregir al momento.
+    if (result != null && result.startsWith('edit')) {
+      final from = int.tryParse(result.split(':').last);
+      _edit(testing: true, from: from == null || from < 0 ? null : from);
+    } else {
+      setState(() {}); // se refleja lo que se cambió al tocar (transporte, vista)
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
-    final linear = editing || view == SongView.linear;
+    if (editing) {
+      return SongEditor(
+        song: song,
+        repo: widget.repo,
+        settings: settings,
+        midi: widget.midi,
+        engine: widget.engine,
+        startTesting: _editTesting,
+        startAt: _editFrom,
+        onDone: () => setState(() => editing = false),
+      );
+    }
+    final linear = view == SongView.linear;
     return ListenableBuilder(
       listenable: settings,
       builder: (context, _) => Scaffold(
@@ -304,50 +292,26 @@ class _SongPageState extends State<SongPage> {
             ),
           ),
           actions: [
-            if (editing)
-              FilledButton.icon(
-                onPressed: () => setState(() => editing = false),
-                icon: const Icon(Icons.check),
-                label: const Text('Listo'),
-              )
-            else ...[
-              FilledButton.icon(
-                onPressed: song.chords.isEmpty
-                    ? null
-                    : () => Navigator.of(context).push(
-                          MaterialPageRoute(
-                            builder: (_) => PlayPage(
-                              song: song,
-                              repo: widget.repo,
-                              midi: widget.midi,
-                              engine: widget.engine,
-                              settings: settings,
-                            ),
-                          ),
-                        // Al volver se refleja lo que se cambió al tocar (transporte, vista).
-                        ).then((_) => mounted ? setState(() {}) : null),
-                icon: const Icon(Icons.play_arrow),
-                label: const Text('Tocar'),
-              ),
-              const SizedBox(width: 12),
-              OutlinedButton.icon(
-                onPressed: () => setState(() {
-                  song.ensureArrangement();
-                  editing = true;
-                }),
-                icon: const Icon(Icons.content_cut),
-                label: const Text('Editar secciones'),
-              ),
-              const SizedBox(width: 12),
-              SegmentedButton<SongView>(
-                segments: const [
-                  ButtonSegment(value: SongView.sections, label: Text('Secciones')),
-                  ButtonSegment(value: SongView.linear, label: Text('Lineal')),
-                ],
-                selected: {view},
-                onSelectionChanged: (s) => setState(() => view = s.first),
-              ),
-            ],
+            FilledButton.icon(
+              onPressed: song.chords.isEmpty ? null : () => _play(),
+              icon: const Icon(Icons.play_arrow),
+              label: const Text('Tocar'),
+            ),
+            const SizedBox(width: 12),
+            OutlinedButton.icon(
+              onPressed: _edit,
+              icon: const Icon(Icons.edit_note),
+              label: const Text('Editar'),
+            ),
+            const SizedBox(width: 12),
+            SegmentedButton<SongView>(
+              segments: const [
+                ButtonSegment(value: SongView.sections, label: Text('Secciones')),
+                ButtonSegment(value: SongView.linear, label: Text('Lineal')),
+              ],
+              selected: {view},
+              onSelectionChanged: (s) => setState(() => view = s.first),
+            ),
             if (song.transpose != 0 && song.key != null) ...[
               const SizedBox(width: 12),
               SegmentedButton<bool>(
@@ -392,7 +356,13 @@ class _SongPageState extends State<SongPage> {
             children: [
               Expanded(
                 child: song.chords.isEmpty
-                    ? const Center(child: Text('Sin acordes'))
+                    ? Center(
+                        child: FilledButton.icon(
+                          onPressed: _edit,
+                          icon: const Icon(Icons.edit_note),
+                          label: const Text('Sin acordes: abrir el editor'),
+                        ),
+                      )
                     : linear
                         ? _linear()
                         : _bySections(),
@@ -421,23 +391,8 @@ class _SongPageState extends State<SongPage> {
 
   Widget _linear() {
     final occurrences = _occurrences;
-    final scheme = Theme.of(context).colorScheme;
     return ListView(
       children: [
-        if (editing)
-          Container(
-            margin: const EdgeInsets.only(top: 8),
-            padding: const EdgeInsets.all(12),
-            decoration: BoxDecoration(
-              color: scheme.secondaryContainer,
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Text(
-              'Toca un acorde para empezar una sección ahí o eliminarlo. En cada sección puedes '
-              'renombrarla, cambiar sus vueltas seguidas (×N), unirla con la anterior o eliminarla.',
-              style: TextStyle(color: scheme.onSecondaryContainer),
-            ),
-          ),
         for (final (i, o) in occurrences.indexed)
           _block(o, occurrenceIndex: i, appearance: _appearance(occurrences, i)),
       ],
@@ -512,75 +467,30 @@ class _SongPageState extends State<SongPage> {
           Text('  ($appearanceª vez)', style: text.titleSmall?.copyWith(color: scheme.onSurfaceVariant)),
       ],
     );
-    if (!editing || occurrenceIndex == null) {
-      return InkWell(
-        borderRadius: BorderRadius.circular(8),
-        onTap: () => _renameSection(section),
-        child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [title, const SizedBox(width: 6), Icon(Icons.edit, size: 14, color: scheme.onSurfaceVariant)],
+    final note = section.note;
+    final noteLine = note == null || note.isEmpty
+        ? null
+        : Padding(
+            padding: const EdgeInsets.only(left: 4, top: 2),
+            child: Text('📝 $note', style: text.bodyLarge?.copyWith(color: scheme.tertiary)),
+          );
+    return Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: () => _renameSection(section),
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 4),
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [title, const SizedBox(width: 6), Icon(Icons.edit, size: 14, color: scheme.onSurfaceVariant)],
+              ),
+            ),
           ),
-        ),
+          ?noteLine,
+        ],
       );
-    }
-    return Wrap(
-      spacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: [
-        title,
-        // Vueltas: la secuencia lineal sigue siendo la interpretación completa.
-        Container(
-          decoration: BoxDecoration(
-            border: Border.all(color: scheme.outlineVariant),
-            borderRadius: BorderRadius.circular(20),
-          ),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              IconButton(
-                tooltip: 'Una vuelta menos',
-                visualDensity: VisualDensity.compact,
-                onPressed: occurrence.repeats > 1
-                    ? () => _setRepeats(occurrenceIndex, occurrence.repeats - 1)
-                    : null,
-                icon: const Icon(Icons.remove, size: 18),
-              ),
-              Text(
-                '×${occurrence.repeats}',
-                style: text.titleMedium?.copyWith(color: repeatColor, fontWeight: FontWeight.w700),
-              ),
-              IconButton(
-                tooltip: 'Una vuelta más',
-                visualDensity: VisualDensity.compact,
-                onPressed: occurrence.repeats < 8
-                    ? () => _setRepeats(occurrenceIndex, occurrence.repeats + 1)
-                    : null,
-                icon: const Icon(Icons.add, size: 18),
-              ),
-            ],
-          ),
-        ),
-        TextButton.icon(
-          onPressed: () => _renameSection(section),
-          icon: const Icon(Icons.edit, size: 16),
-          label: const Text('Renombrar'),
-        ),
-        if (occurrenceIndex > 0)
-          TextButton.icon(
-            onPressed: () => _mergeWithPrevious(occurrenceIndex),
-            icon: const Icon(Icons.merge, size: 16),
-            label: const Text('Unir con la anterior'),
-          ),
-        TextButton.icon(
-          style: TextButton.styleFrom(foregroundColor: scheme.error),
-          onPressed: () => _removeOccurrence(occurrenceIndex),
-          icon: const Icon(Icons.delete_outline, size: 16),
-          label: const Text('Eliminar sección'),
-        ),
-      ],
-    );
   }
 
   Widget _block(
@@ -655,8 +565,7 @@ class _SongPageState extends State<SongPage> {
                   confidence: song.chords[i].confidence,
                   beats: song.chords[i].beats,
                   edited: song.chords[i].edited,
-                  highlight: editing && i == occurrence.start,
-                  onTap: () => _tapChord(i, occurrence),
+                  onTap: () => _editChord(i, occurrence: occurrence),
                 ),
               ],
             ],

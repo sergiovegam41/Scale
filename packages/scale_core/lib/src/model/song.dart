@@ -166,19 +166,29 @@ enum SectionKind {
 
 /// Una sección distinta de la canción (Verso, Coro…).
 class SectionDef {
-  SectionDef({required this.id, required this.label, this.kind = SectionKind.other});
+  SectionDef({required this.id, required this.label, this.kind = SectionKind.other, this.note});
 
   factory SectionDef.fromJson(Map<String, dynamic> json) => SectionDef(
         id: json['id'] as String,
         label: json['label'] as String,
         kind: SectionKind.values.asNameMap()[json['kind']] ?? SectionKind.other,
+        note: json['note'] as String?,
       );
 
   final String id;
   String label;
   SectionKind kind;
 
-  Map<String, dynamic> toJson() => {'id': id, 'label': label, 'kind': kind.name};
+  /// Nota libre de apoyo ("Hacer adorno acá", "Cambio de ritmo"); se muestra
+  /// al tocar en vivo mientras se está en esta sección.
+  String? note;
+
+  Map<String, dynamic> toJson() => {
+        'id': id,
+        'label': label,
+        'kind': kind.name,
+        if (note != null && note!.trim().isNotEmpty) 'note': note,
+      };
 }
 
 /// Dónde aparece una sección en la secuencia lineal: acordes [start, end).
@@ -219,6 +229,14 @@ class SectionOccurrence {
         'end': end,
         if (repeats > 1) 'repeats': repeats,
       };
+}
+
+/// Una aparición vista como sus vueltas (para editar todas a la vez).
+class _Block {
+  _Block(this.sectionId, this.passes);
+
+  final String sectionId;
+  final List<List<ChordEvent>> passes;
 }
 
 /// Letra opcional (por ejemplo importada de un cancionero).
@@ -510,10 +528,18 @@ class Song {
 
   /// Cambia las vueltas de una aparición. La secuencia lineal sigue siendo la
   /// interpretación completa: agregar vueltas copia la primera; quitarlas
-  /// borra las últimas (la toma MIDI original no se toca).
+  /// borra las últimas (la toma MIDI original no se toca). Si una aparición
+  /// sin vueltas ya está hecha de [repeats] vueltas iguales, solo se agrupan.
   void setRepeats(int occurrence, int repeats) {
     final o = arrangement[occurrence];
     if (repeats < 1 || repeats == o.repeats) return;
+    if (o.repeats == 1 && o.length % repeats == 0 && o.length > repeats) {
+      final pass = o.length ~/ repeats;
+      if ([for (var r = 1; r < repeats; r++) _equalChords(o.start, o.start + r * pass, pass)].every((e) => e)) {
+        o.repeats = repeats;
+        return;
+      }
+    }
     final pass = o.passLength;
     final current = o.length ~/ pass;
     if (repeats > current) {
@@ -544,6 +570,281 @@ class Song {
 
   void _dropUnusedSections() =>
       sections.removeWhere((s) => !arrangement.any((o) => o.sectionId == s.id));
+
+  // ── Edición por vueltas ──────────────────────────────────────────────
+  //
+  // Una aparición ×N se edita como una sola vuelta: lo que se cambia en la
+  // vuelta se aplica a todas, así el ×N sigue siendo cierto.
+
+  /// Posiciones lineales del acorde [offset] en cada vuelta de la aparición.
+  List<int> passPositions(int occurrence, int offset) {
+    final o = arrangement[occurrence];
+    final pass = o.passLength;
+    if (offset < 0 || offset >= pass) return const [];
+    return [for (var p = 0; p < o.length ~/ pass; p++) o.start + p * pass + offset];
+  }
+
+  /// Inserta [event] en la posición [offset] de cada vuelta de la aparición.
+  void insertChord(int occurrence, int offset, ChordEvent event) {
+    final blocks = _blocks();
+    for (final (k, pass) in blocks[occurrence].passes.indexed) {
+      pass.insert(offset.clamp(0, pass.length), k == 0 ? event : event.copyForRepeat());
+    }
+    _setBlocks(blocks);
+  }
+
+  /// Quita el acorde [offset] de cada vuelta (si la aparición queda vacía,
+  /// desaparece).
+  void removeChord(int occurrence, int offset) {
+    final blocks = _blocks();
+    for (final pass in blocks[occurrence].passes) {
+      if (offset >= 0 && offset < pass.length) pass.removeAt(offset);
+    }
+    _setBlocks(blocks);
+  }
+
+  /// Mueve un acorde de una vuelta a otra posición, en la misma sección o en
+  /// otra. [toOffset] es la posición antes de quitarlo (insertar delante del
+  /// acorde que hoy está ahí; igual al largo = al final).
+  void moveChord(int fromOccurrence, int fromOffset, int toOccurrence, int toOffset) {
+    if (fromOccurrence == toOccurrence && (toOffset == fromOffset || toOffset == fromOffset + 1)) return;
+    final blocks = _blocks();
+    final moved = [
+      for (final pass in blocks[fromOccurrence].passes)
+        if (fromOffset < pass.length) pass.removeAt(fromOffset),
+    ];
+    if (moved.isEmpty) return;
+    var at = toOffset;
+    if (fromOccurrence == toOccurrence && fromOffset < toOffset) at--;
+    for (final (k, pass) in blocks[toOccurrence].passes.indexed) {
+      pass.insert(at.clamp(0, pass.length), k < moved.length ? moved[k] : moved.first.copyForRepeat());
+    }
+    _setBlocks(blocks);
+  }
+
+  /// Cambia el orden de las apariciones: [from] queda en la posición [to].
+  void moveOccurrence(int from, int to) {
+    final blocks = _blocks();
+    if (from < 0 || from >= blocks.length) return;
+    blocks.insert(to.clamp(0, blocks.length - 1), blocks.removeAt(from));
+    _setBlocks(blocks);
+  }
+
+  /// Copia la aparición justo después, como sección nueva con el mismo nombre
+  /// y nota (cada aparición es su propia sección).
+  void duplicateOccurrence(int occurrence) {
+    final blocks = _blocks();
+    final source = blocks[occurrence];
+    final original = section(source.sectionId);
+    final copy = newSection(label: original?.label ?? nextPartLabel(), kind: original?.kind ?? SectionKind.other)
+      ..note = original?.note;
+    sections.add(copy);
+    blocks.insert(
+      occurrence + 1,
+      _Block(copy.id, [
+        for (final pass in source.passes) [for (final e in pass) e.copyForRepeat()],
+      ]),
+    );
+    _setBlocks(blocks);
+  }
+
+  /// Agrega una sección con los acordes de una vuelta ×[repeats], en la
+  /// posición [at] del orden (al final si es null).
+  void addSection(SectionDef section, List<ChordEvent> pass, {int repeats = 1, int? at}) {
+    if (pass.isEmpty) return;
+    final blocks = _blocks();
+    if (!sections.any((s) => s.id == section.id)) sections.add(section);
+    blocks.insert(
+      (at ?? blocks.length).clamp(0, blocks.length),
+      _Block(section.id, [
+        pass,
+        for (var r = 1; r < repeats; r++) [for (final e in pass) e.copyForRepeat()],
+      ]),
+    );
+    _setBlocks(blocks);
+  }
+
+  /// Reemplaza la vuelta de una aparición (por ejemplo, escrita como texto).
+  /// Los acordes que siguen igual conservan su lugar en la toma y su lectura;
+  /// los tiempos anotados se toman de [pass]. Con [repeats] cambian las vueltas.
+  void replacePass(int occurrence, List<ChordEvent> pass, {int? repeats}) {
+    final blocks = _blocks();
+    final block = blocks[occurrence];
+    final old = block.passes.first;
+    final match = _alignment([for (final e in old) e.chord], [for (final e in pass) e.chord]);
+    final n = (repeats ?? block.passes.length).clamp(1, 64);
+    final passes = <List<ChordEvent>>[
+      for (var k = 0; k < n; k++)
+        [
+          for (final (j, e) in pass.indexed)
+            if (match[j] case final i? when k < block.passes.length && i < block.passes[k].length)
+              block.passes[k][i]..beats = e.beats
+            else if (k == 0)
+              e
+            else
+              e.copyForRepeat(),
+        ],
+    ];
+    block.passes
+      ..clear()
+      ..addAll(passes);
+    _setBlocks(blocks);
+  }
+
+  /// Empieza [second] en el acorde [offset] de cada vuelta: (A B) ×2 queda
+  /// A B A B. Cada trozo es su propia sección; los de las otras vueltas
+  /// llevan los mismos nombres. Sin vueltas es partir la sección en dos.
+  void splitPasses(int occurrence, int offset, SectionDef second) {
+    final blocks = _blocks();
+    final block = blocks[occurrence];
+    if (offset <= 0 || offset >= block.passes.first.length) return;
+    if (!sections.any((s) => s.id == second.id)) sections.add(second);
+    final first = section(block.sectionId);
+    SectionDef copyOf(SectionDef? s, SectionDef fallback) {
+      final copy = newSection(label: (s ?? fallback).label, kind: (s ?? fallback).kind)..note = s?.note;
+      sections.add(copy);
+      return copy;
+    }
+
+    final pieces = <_Block>[];
+    for (final (k, pass) in block.passes.indexed) {
+      final a = k == 0 ? block.sectionId : copyOf(first, second).id;
+      final b = k == 0 ? second.id : copyOf(second, second).id;
+      pieces
+        ..add(_Block(a, [pass.sublist(0, offset)]))
+        ..add(_Block(b, [pass.sublist(offset)]));
+    }
+    blocks.replaceRange(occurrence, occurrence + 1, pieces);
+    _setBlocks(blocks);
+  }
+
+  /// Separa las vueltas: la aparición queda ×1 con todos sus acordes a la vista.
+  void ungroup(int occurrence) => arrangement[occurrence].repeats = 1;
+
+  /// Para cada acorde de [b], el índice del mismo acorde en [a] según la
+  /// subsecuencia común más larga (null si es nuevo).
+  static List<int?> _alignment(List<Chord> a, List<Chord> b) {
+    final dp = List.generate(a.length + 1, (_) => List<int>.filled(b.length + 1, 0));
+    for (var i = a.length - 1; i >= 0; i--) {
+      for (var j = b.length - 1; j >= 0; j--) {
+        dp[i][j] = a[i] == b[j] ? dp[i + 1][j + 1] + 1 : math.max(dp[i + 1][j], dp[i][j + 1]);
+      }
+    }
+    final result = List<int?>.filled(b.length, null);
+    var i = 0, j = 0;
+    while (i < a.length && j < b.length) {
+      if (a[i] == b[j]) {
+        result[j] = i;
+        i++;
+        j++;
+      } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+        i++;
+      } else {
+        j++;
+      }
+    }
+    return result;
+  }
+
+  List<_Block> _blocks() {
+    ensureArrangement();
+    return [
+      for (final o in arrangement)
+        _Block(o.sectionId, [
+          if (o.repeats > 1 && o.length % o.repeats == 0)
+            for (var p = 0; p < o.repeats; p++)
+              chords.sublist(o.start + p * o.passLength, o.start + (p + 1) * o.passLength)
+          else
+            chords.sublist(o.start, o.end),
+        ]),
+    ];
+  }
+
+  /// Vuelve a armar la secuencia lineal desde las vueltas. Las modulaciones
+  /// siguen al acorde con el que empezaban (o al siguiente que quede).
+  void _setBlocks(List<_Block> blocks) {
+    final old = List.of(chords);
+    chords.clear();
+    arrangement.clear();
+    for (final b in blocks) {
+      final passes = b.passes.where((p) => p.isNotEmpty).toList();
+      if (passes.isEmpty) continue;
+      final start = chords.length;
+      for (final p in passes) {
+        chords.addAll(p);
+      }
+      final equal = passes.every((p) => p.length == passes.first.length);
+      arrangement.add(SectionOccurrence(
+        sectionId: b.sectionId,
+        start: start,
+        end: chords.length,
+        repeats: equal ? passes.length : 1,
+      ));
+    }
+    _dropUnusedSections();
+
+    final index = Map<ChordEvent, int>.identity();
+    for (final (i, e) in chords.indexed) {
+      index[e] = i;
+    }
+    final starts = <(int, KeyRegion)>[];
+    for (final r in keyRegions) {
+      for (var i = r.start; i < r.end && i < old.length; i++) {
+        final at = index[old[i]];
+        if (at != null) {
+          starts.add((at, r));
+          break;
+        }
+      }
+    }
+    starts.sort((a, b) => a.$1.compareTo(b.$1));
+    final merged = <(int, KeyRegion)>[];
+    for (final s in starts) {
+      if (merged.isNotEmpty && (merged.last.$1 == s.$1 || merged.last.$2.key == s.$2.key)) continue;
+      merged.add(s);
+    }
+    keyRegions = [
+      for (final (i, (start, r)) in merged.indexed)
+        KeyRegion(
+          start: i == 0 ? 0 : start,
+          end: i + 1 < merged.length ? merged[i + 1].$1 : chords.length,
+          key: r.key,
+          confidence: r.confidence,
+        ),
+    ];
+  }
+
+  // ── Deshacer ─────────────────────────────────────────────────────────
+
+  /// Todo lo editable (sin las tomas MIDI), para deshacer y rehacer.
+  Map<String, dynamic> editState() => {
+        'title': title,
+        if (key != null) 'key': key!.toJson(),
+        if (keyConfidence != null) 'keyConfidence': keyConfidence,
+        'keyManual': keyManual,
+        'chords': [for (final c in chords) c.toJson()],
+        'keyRegions': [for (final r in keyRegions) r.toJson()],
+        'keyRegionsManual': keyRegionsManual,
+        'sections': [for (final s in sections) s.toJson()],
+        'arrangement': [for (final o in arrangement) o.toJson()],
+      };
+
+  void restoreEditState(Map<String, dynamic> state) {
+    List<T> list<T>(String field, T Function(Map<String, dynamic>) parse) => [
+          for (final e in (state[field] as List?) ?? const []) parse(e as Map<String, dynamic>),
+        ];
+    title = state['title'] as String;
+    key = state['key'] == null ? null : MusicKey.fromJson(state['key'] as Map<String, dynamic>);
+    keyConfidence = (state['keyConfidence'] as num?)?.toDouble();
+    keyManual = state['keyManual'] as bool;
+    chords
+      ..clear()
+      ..addAll(list('chords', ChordEvent.fromJson));
+    keyRegions = list('keyRegions', KeyRegion.fromJson);
+    keyRegionsManual = state['keyRegionsManual'] as bool;
+    sections = list('sections', SectionDef.fromJson);
+    arrangement = list('arrangement', SectionOccurrence.fromJson);
+  }
 
   // ── Modulaciones ─────────────────────────────────────────────────────
 

@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
-import 'package:path_provider/path_provider.dart';
+import 'app_dir.dart';
 import 'package:scale_core/scale_core.dart';
 
 /// Canciones guardadas localmente, un archivo JSON por canción.
@@ -21,7 +21,7 @@ class SongRepository extends ChangeNotifier {
   List<Song> get songs => List.unmodifiable(_songs);
 
   Future<Directory> _dir() async {
-    final dir = _directory ??= Directory('${(await getApplicationDocumentsDirectory()).path}/songs');
+    final dir = _directory ??= Directory('${(await appDataDirectory()).path}/songs');
     if (!await dir.exists()) await dir.create(recursive: true);
     return dir;
   }

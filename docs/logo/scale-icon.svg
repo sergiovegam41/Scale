@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200">
+  <!-- Logo de Scale: un acorde (tríada) dentro del medidor de seguridad. -->
+  <rect width="200" height="200" rx="46" fill="#0F1318"/>
+  <circle cx="100" cy="100" r="64" transform="rotate(135 100 100)" fill="none" stroke="#232A33" stroke-width="14" stroke-linecap="round" stroke-dasharray="301.59 100.53"/>
+  <circle cx="100" cy="100" r="64" transform="rotate(135 100 100)" fill="none" stroke="#F29A2E" stroke-width="14" stroke-linecap="round" stroke-dasharray="235.24 166.88"/>
+  <g stroke="#2C343E" stroke-width="3" stroke-linecap="round">
+    <line x1="70" y1="92" x2="130" y2="92"/>
+    <line x1="70" y1="110" x2="130" y2="110"/>
+    <line x1="70" y1="128" x2="130" y2="128"/>
+  </g>
+  <rect x="104.2" y="60" width="4" height="68" rx="2" fill="#E4E9EE"/>
+  <ellipse cx="97" cy="92" rx="10" ry="7.2" transform="rotate(-22 97 92)" fill="#E4E9EE"/>
+  <ellipse cx="97" cy="110" rx="10" ry="7.2" transform="rotate(-22 97 110)" fill="#E4E9EE"/>
+  <ellipse cx="97" cy="128" rx="10" ry="7.2" transform="rotate(-22 97 128)" fill="#F29A2E"/>
+</svg>

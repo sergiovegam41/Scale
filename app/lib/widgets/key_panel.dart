@@ -9,7 +9,19 @@ class KeyPanel extends StatelessWidget {
     required this.notation,
     this.previousKey,
     this.layer = 0,
+    this.emptyMessage = 'Toca acordes para detectar la tonalidad',
+    this.unit = 'acordes',
+    this.showScale = false,
   });
+
+  /// Mostrar las notas de la escala de la tonalidad.
+  final bool showScale;
+
+  /// Texto cuando todavía no hay nada que analizar.
+  final String emptyMessage;
+
+  /// Qué se analizó ("acordes", "notas").
+  final String unit;
 
   final KeyEstimate estimate;
   final Notation notation;
@@ -37,12 +49,9 @@ class KeyPanel extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Text('Tonalidad', style: text.titleMedium),
-              const Expanded(
+              Expanded(
                 child: Center(
-                  child: Text(
-                    'Toca acordes para detectar la tonalidad',
-                    textAlign: TextAlign.center,
-                  ),
+                  child: Text(emptyMessage, textAlign: TextAlign.center),
                 ),
               ),
             ],
@@ -55,7 +64,7 @@ class KeyPanel extends StatelessWidget {
     final relative = best.relative;
     final (label, color) = status(estimate.confidence, scheme);
     final enharmonic = best.enharmonicName(notation);
-    final others = estimate.alternatives.where((c) => c.key != relative).take(3);
+    final others = estimate.alternatives.where((c) => c.key != relative).take(showScale ? 2 : 3);
 
     return Card(
       child: Padding(
@@ -115,6 +124,32 @@ class KeyPanel extends StatelessWidget {
               subtitle: 'relativa · mismas notas',
               probability: estimate.probabilityOf(relative),
             ),
+            if (showScale) ...[
+              const SizedBox(height: 8),
+              Text('Escala de ${best.label(notation)}', style: text.labelLarge),
+              const SizedBox(height: 6),
+              Wrap(
+                spacing: 6,
+                runSpacing: 6,
+                children: [
+                  for (final (i, pc) in best.scale.indexed)
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                      decoration: BoxDecoration(
+                        color: i == 0 ? scheme.primaryContainer : scheme.surfaceContainerHighest,
+                        borderRadius: BorderRadius.circular(8),
+                      ),
+                      child: Text(
+                        best.spell(pc).name(notation),
+                        style: text.titleMedium?.copyWith(
+                          fontWeight: i == 0 ? FontWeight.w800 : FontWeight.w500,
+                          color: i == 0 ? scheme.onPrimaryContainer : null,
+                        ),
+                      ),
+                    ),
+                ],
+              ),
+            ],
             const Divider(height: 24),
             Text('Alternativas', style: text.labelLarge),
             const SizedBox(height: 6),
@@ -135,7 +170,7 @@ class KeyPanel extends StatelessWidget {
                 ],
               ),
             Text(
-              '${estimate.observations} acordes analizados',
+              '${estimate.observations} $unit analizados',
               style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
           ],

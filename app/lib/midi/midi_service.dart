@@ -70,10 +70,15 @@ class MidiService extends ChangeNotifier {
   Duration get now => _clock.elapsed;
 
   Future<void> init() async {
-    _midi.configureBleTransport(null);
-    _midi.configureTransportPolicy(
-      const MidiTransportPolicy(excludedTransports: {MidiTransport.ble}),
-    );
+    // Solo USB: sin Bluetooth (en escritorio puede no estar implementado).
+    try {
+      _midi.configureBleTransport(null);
+      _midi.configureTransportPolicy(
+        const MidiTransportPolicy(excludedTransports: {MidiTransport.ble}),
+      );
+    } catch (e) {
+      debugPrint('Sin política de transporte MIDI: $e');
+    }
     _setupSub = _midi.onMidiSetupChanged?.listen((_) => refresh());
     _rxSub = _midi.onMidiDataReceived?.listen(_onData);
     _lifecycle = AppLifecycleListener(onResume: refresh);

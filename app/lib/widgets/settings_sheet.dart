@@ -17,6 +17,49 @@ class SettingsButton extends StatelessWidget {
       );
 }
 
+/// API key de Anthropic: oculta, se guarda solo en este dispositivo.
+class _ApiKeyField extends StatefulWidget {
+  const _ApiKeyField({required this.settings});
+
+  final AppSettings settings;
+
+  @override
+  State<_ApiKeyField> createState() => _ApiKeyFieldState();
+}
+
+class _ApiKeyFieldState extends State<_ApiKeyField> {
+  late final TextEditingController controller =
+      TextEditingController(text: widget.settings.anthropicApiKey);
+  bool visible = false;
+
+  @override
+  void dispose() {
+    controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return TextField(
+      controller: controller,
+      obscureText: !visible,
+      autocorrect: false,
+      enableSuggestions: false,
+      decoration: InputDecoration(
+        labelText: 'API key de Anthropic',
+        helperText: 'Se guarda solo en esta tablet. Necesaria para importar imágenes y texto.',
+        border: const OutlineInputBorder(),
+        suffixIcon: IconButton(
+          tooltip: visible ? 'Ocultar' : 'Mostrar',
+          onPressed: () => setState(() => visible = !visible),
+          icon: Icon(visible ? Icons.visibility_off : Icons.visibility),
+        ),
+      ),
+      onChanged: (v) => widget.settings.anthropicApiKey = v,
+    );
+  }
+}
+
 Future<void> showSettings(BuildContext context, AppSettings settings) {
   return showModalBottomSheet<void>(
     context: context,
@@ -27,7 +70,8 @@ Future<void> showSettings(BuildContext context, AppSettings settings) {
         final text = Theme.of(context).textTheme;
         return SafeArea(
           child: SingleChildScrollView(
-            padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+            // Deja espacio al teclado al escribir la API key.
+            padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + MediaQuery.of(context).viewInsets.bottom),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -79,6 +123,10 @@ Future<void> showSettings(BuildContext context, AppSettings settings) {
                   selected: {settings.transposeRange},
                   onSelectionChanged: (s) => settings.transposeRange = s.first,
                 ),
+                const Divider(height: 40),
+                Text('Importar con IA', style: text.titleMedium),
+                const SizedBox(height: 8),
+                _ApiKeyField(settings: settings),
               ],
             ),
           ),
