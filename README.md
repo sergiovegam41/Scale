@@ -2,6 +2,8 @@
 
 App para tablet (Flutter, Android) que escucha un piano por MIDI y anota canciones: detecta los acordes y la tonalidad en vivo, guarda la secuencia y ayuda a tocarlas después. Pensada para músicos de alabanza.
 
+**Descargar:** [sergiovegam41.github.io/scale-app](https://sergiovegam41.github.io/scale-app/) · Android (APK) y Windows · [todas las versiones](https://github.com/sergiovegam41/Scale/releases)
+
 ## Qué hace
 
 - **En vivo**: acorde actual, seguridad y alternativas; tonalidad con su relativa, enarmónica y modulaciones; grados Nashville.
