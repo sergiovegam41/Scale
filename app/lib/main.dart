@@ -10,10 +10,14 @@ import 'storage/song_repository.dart';
 
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
-  SystemChrome.setPreferredOrientations([
-    DeviceOrientation.landscapeLeft,
-    DeviceOrientation.landscapeRight,
-  ]);
+  // En tablet, siempre en horizontal; en el teléfono se puede girar.
+  final view = WidgetsBinding.instance.platformDispatcher.views.first;
+  if (view.physicalSize.shortestSide / view.devicePixelRatio >= 600) {
+    SystemChrome.setPreferredOrientations([
+      DeviceOrientation.landscapeLeft,
+      DeviceOrientation.landscapeRight,
+    ]);
+  }
   final midi = MidiService()..init();
   final settings = AppSettings();
   final engine = ChordEngine(midi, settings);

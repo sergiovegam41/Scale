@@ -10,6 +10,7 @@ import '../play/live_follow.dart';
 import '../settings.dart';
 import '../storage/song_repository.dart';
 import '../widgets/chord_cell.dart';
+import '../widgets/responsive.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/record_section_dialog.dart';
 import '../widgets/repeat_badge.dart';
@@ -159,11 +160,13 @@ class _SongEditorState extends State<SongEditor> {
 
   void _toast(String message, {bool undo = false}) {
     final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
-    messenger.showSnackBar(SnackBar(
-      content: Text(message),
-      duration: const Duration(seconds: 3),
-      action: undo ? SnackBarAction(label: 'Deshacer', onPressed: _undo) : null,
-    ));
+    messenger.showSnackBar(
+      SnackBar(
+        content: Text(message),
+        duration: const Duration(seconds: 3),
+        action: undo ? SnackBarAction(label: 'Deshacer', onPressed: _undo) : null,
+      ),
+    );
   }
 
   /// Posición (aparición, lugar en la vuelta) de un acorde lineal.
@@ -201,16 +204,18 @@ class _SongEditorState extends State<SongEditor> {
     final o = song.arrangement[occurrence];
     final index = o.start + offset;
     final passes = o.length ~/ o.passLength;
-    final edit = await _paused(() => editChord(
-      context,
-      event: song.chords[index],
-      musicKey: song.keyAt(index),
-      settings: settings,
-      piano: engine,
-      structure: true,
-      canFollow: testing,
-      where: passes > 1 ? 'Se cambia en las $passes vueltas' : null,
-    ));
+    final edit = await _paused(
+      () => editChord(
+        context,
+        event: song.chords[index],
+        musicKey: song.keyAt(index),
+        settings: settings,
+        piano: engine,
+        structure: true,
+        canFollow: testing,
+        where: passes > 1 ? 'Se cambia en las $passes vueltas' : null,
+      ),
+    );
     if (edit == null || !mounted) return;
     switch (edit) {
       case ReplaceChord(:final chord):
@@ -234,14 +239,16 @@ class _SongEditorState extends State<SongEditor> {
   }
 
   Future<void> _insert(int occurrence, int offset) async {
-    final chord = await _paused(() => pickChord(
-          context,
-          title: 'Agregar acorde',
-          settings: settings,
-          musicKey: song.key,
-          piano: engine,
-          suggestions: _suggestions,
-        ));
+    final chord = await _paused(
+      () => pickChord(
+        context,
+        title: 'Agregar acorde',
+        settings: settings,
+        musicKey: song.key,
+        piano: engine,
+        suggestions: _suggestions,
+      ),
+    );
     if (chord == null || !mounted) return;
     await _mutate(() => song.insertChord(occurrence, offset, ChordEvent(chord: chord)));
   }
@@ -256,11 +263,7 @@ class _SongEditorState extends State<SongEditor> {
     );
     if (choice is! NewSection || !mounted) return;
     final repeats = song.arrangement[occurrence].repeats;
-    await _mutate(() => song.splitPasses(
-          occurrence,
-          offset,
-          song.newSection(label: choice.label, kind: choice.kind),
-        ));
+    await _mutate(() => song.splitPasses(occurrence, offset, song.newSection(label: choice.label, kind: choice.kind)));
     if (repeats > 1) _toast('Se partió cada una de las $repeats vueltas', undo: true);
   }
 
@@ -280,17 +283,19 @@ class _SongEditorState extends State<SongEditor> {
     final section = song.section(o.sectionId);
     if (section == null) return;
     final pass = song.chords.sublist(o.start, o.start + o.passLength);
-    final result = await _paused(() => editSectionDialog(
-      context,
-      title: 'Editar sección',
-      settings: settings,
-      label: section.label,
-      kind: section.kind,
-      note: section.note,
-      chords: ChordLine.format(pass, formatter: fmt, key: song.keyAt(o.start), repeats: o.length ~/ o.passLength),
-      musicKey: song.keyAt(o.start),
-      piano: engine,
-    ));
+    final result = await _paused(
+      () => editSectionDialog(
+        context,
+        title: 'Editar sección',
+        settings: settings,
+        label: section.label,
+        kind: section.kind,
+        note: section.note,
+        chords: ChordLine.format(pass, formatter: fmt, key: song.keyAt(o.start), repeats: o.length ~/ o.passLength),
+        musicKey: song.keyAt(o.start),
+        piano: engine,
+      ),
+    );
     if (result == null || !mounted) return;
     await _mutate(() {
       section
@@ -302,16 +307,18 @@ class _SongEditorState extends State<SongEditor> {
   }
 
   Future<void> _addSection({int? at}) async {
-    final result = await _paused(() => editSectionDialog(
-      context,
-      title: song.chords.isEmpty ? 'Primera sección' : 'Sección nueva',
-      settings: settings,
-      label: song.chords.isEmpty ? 'Intro' : song.nextPartLabel(),
-      kind: song.chords.isEmpty ? SectionKind.intro : SectionKind.other,
-      musicKey: song.key,
-      piano: engine,
-      action: 'Agregar',
-    ));
+    final result = await _paused(
+      () => editSectionDialog(
+        context,
+        title: song.chords.isEmpty ? 'Primera sección' : 'Sección nueva',
+        settings: settings,
+        label: song.chords.isEmpty ? 'Intro' : song.nextPartLabel(),
+        kind: song.chords.isEmpty ? SectionKind.intro : SectionKind.other,
+        musicKey: song.key,
+        piano: engine,
+        action: 'Agregar',
+      ),
+    );
     if (result == null || !mounted) return;
     await _mutate(() {
       final section = song.newSection(label: result.label, kind: result.kind)
@@ -327,16 +334,18 @@ class _SongEditorState extends State<SongEditor> {
     final section = song.section(o.sectionId);
     final pass = song.chords.sublist(o.start, o.start + o.passLength);
     final passes = o.length ~/ o.passLength;
-    final result = await _paused(() => recordSectionDialog(
-          context,
-          title: 'Regrabar "${section?.label ?? ''}" con el piano',
-          piano: engine,
-          midi: widget.midi,
-          settings: settings,
-          musicKey: song.keyAt(o.start),
-          replacing: ChordLine.format(pass, formatter: fmt, key: song.keyAt(o.start), repeats: passes),
-          action: 'Reemplazar',
-        ));
+    final result = await _paused(
+      () => recordSectionDialog(
+        context,
+        title: 'Regrabar "${section?.label ?? ''}" con el piano',
+        piano: engine,
+        midi: widget.midi,
+        settings: settings,
+        musicKey: song.keyAt(o.start),
+        replacing: ChordLine.format(pass, formatter: fmt, key: song.keyAt(o.start), repeats: passes),
+        action: 'Reemplazar',
+      ),
+    );
     if (result == null || !mounted) return;
     await _mutate(() => song.replacePass(occurrence, result.pass, repeats: result.repeats));
     _toast('Sección regrabada', undo: true);
@@ -344,23 +353,27 @@ class _SongEditorState extends State<SongEditor> {
 
   /// Grabar una sección nueva tocándola.
   Future<void> _recordNew({int? at}) async {
-    final result = await _paused(() => recordSectionDialog(
-          context,
-          title: 'Grabar sección nueva con el piano',
-          piano: engine,
-          midi: widget.midi,
-          settings: settings,
-          musicKey: song.key,
-          action: 'Agregar',
-          newLabel: song.chords.isEmpty ? 'Intro' : song.nextPartLabel(),
-        ));
+    final result = await _paused(
+      () => recordSectionDialog(
+        context,
+        title: 'Grabar sección nueva con el piano',
+        piano: engine,
+        midi: widget.midi,
+        settings: settings,
+        musicKey: song.key,
+        action: 'Agregar',
+        newLabel: song.chords.isEmpty ? 'Intro' : song.nextPartLabel(),
+      ),
+    );
     if (result == null || !mounted) return;
-    await _mutate(() => song.addSection(
-          song.newSection(label: result.label ?? song.nextPartLabel(), kind: result.kind),
-          result.pass,
-          repeats: result.repeats,
-          at: at,
-        ));
+    await _mutate(
+      () => song.addSection(
+        song.newSection(label: result.label ?? song.nextPartLabel(), kind: result.kind),
+        result.pass,
+        repeats: result.repeats,
+        at: at,
+      ),
+    );
   }
 
   Future<void> _sectionAction(int occurrence, String action) async {
@@ -454,8 +467,8 @@ class _SongEditorState extends State<SongEditor> {
     _scrollSpeed = global.dy < top + edge
         ? -max * ((top + edge - global.dy) / edge).clamp(0, 1)
         : global.dy > bottom - edge
-            ? max * ((global.dy - bottom + edge) / edge).clamp(0, 1)
-            : 0;
+        ? max * ((global.dy - bottom + edge) / edge).clamp(0, 1)
+        : 0;
     if (_scrollSpeed != 0 && _autoScroll == null) {
       _autoScroll = Timer.periodic(const Duration(milliseconds: 16), (_) {
         if (!_scroll.hasClients || _scrollSpeed == 0) return;
@@ -474,10 +487,21 @@ class _SongEditorState extends State<SongEditor> {
 
   /// Se arrastra de lado sin esperar (de arriba abajo se desplaza la
   /// partitura) o en cualquier dirección manteniendo presionado.
-  Widget _draggable({required _DragItem data, required Widget feedback, required Widget child, Widget? ghost}) {
+  Widget _draggable({
+    required _DragItem data,
+    required Widget feedback,
+    required Widget child,
+    Widget? ghost,
+    bool longPressOnly = false,
+  }) {
     final lifted = Transform.translate(
       offset: const Offset(-52, -42),
-      child: Material(color: Colors.transparent, elevation: 10, borderRadius: BorderRadius.circular(12), child: feedback),
+      child: Material(
+        color: Colors.transparent,
+        elevation: 10,
+        borderRadius: BorderRadius.circular(12),
+        child: feedback,
+      ),
     );
     final moving = data is _MoveItem;
     Widget wrap(Widget inner, {required bool longPress}) {
@@ -508,6 +532,7 @@ class _SongEditorState extends State<SongEditor> {
       );
     }
 
+    if (longPressOnly) return wrap(child, longPress: true);
     return wrap(wrap(child, longPress: false), longPress: true);
   }
 
@@ -532,95 +557,332 @@ class _SongEditorState extends State<SongEditor> {
           child: Focus(
             autofocus: true,
             child: Scaffold(
-              appBar: AppBar(
-                leading: IconButton(
-                  tooltip: 'Terminar de editar',
-                  onPressed: widget.onDone,
-                  icon: const Icon(Icons.arrow_back),
-                ),
-                title: InkWell(
-                  onTap: _rename,
-                  child: Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 8),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Icon(Icons.edit_note, color: scheme.primary),
+              appBar: context.isCompact
+                  ? _compactBar()
+                  : AppBar(
+                      leading: IconButton(
+                        tooltip: 'Terminar de editar',
+                        onPressed: widget.onDone,
+                        icon: const Icon(Icons.arrow_back),
+                      ),
+                      title: InkWell(
+                        onTap: _rename,
+                        child: Padding(
+                          padding: const EdgeInsets.symmetric(vertical: 8),
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: [
+                              Icon(Icons.edit_note, color: scheme.primary),
+                              const SizedBox(width: 8),
+                              Flexible(child: Text(song.title, overflow: TextOverflow.ellipsis)),
+                            ],
+                          ),
+                        ),
+                      ),
+                      actions: [
+                        IconButton(
+                          tooltip: 'Deshacer (Ctrl+Z)',
+                          onPressed: history.canUndo ? _undo : null,
+                          icon: const Icon(Icons.undo),
+                        ),
+                        IconButton(
+                          tooltip: 'Rehacer (Ctrl+Y)',
+                          onPressed: history.canRedo ? _redo : null,
+                          icon: const Icon(Icons.redo),
+                        ),
                         const SizedBox(width: 8),
-                        Flexible(child: Text(song.title, overflow: TextOverflow.ellipsis)),
+                        if (testing)
+                          FilledButton.icon(
+                            style: FilledButton.styleFrom(backgroundColor: Colors.greenAccent.shade700),
+                            onPressed: () => _setTesting(false),
+                            icon: const Icon(Icons.stop),
+                            label: const Text('Probando'),
+                          )
+                        else
+                          FilledButton.tonalIcon(
+                            onPressed: song.chords.isEmpty ? null : () => _setTesting(true),
+                            icon: const Icon(Icons.piano),
+                            label: const Text('Probar'),
+                          ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => _recordNew(),
+                          icon: const Icon(Icons.fiber_manual_record, color: Color(0xFFE53935)),
+                          label: const Text('Grabar sección'),
+                        ),
+                        const SizedBox(width: 8),
+                        OutlinedButton.icon(
+                          onPressed: () => _addSection(),
+                          icon: const Icon(Icons.add),
+                          label: const Text('Escribir sección'),
+                        ),
+                        const SizedBox(width: 4),
+                        SettingsButton(settings: settings),
+                        FilledButton.icon(
+                          onPressed: widget.onDone,
+                          icon: const Icon(Icons.check),
+                          label: const Text('Listo'),
+                        ),
+                        const SizedBox(width: 12),
                       ],
                     ),
-                  ),
-                ),
-                actions: [
-                  IconButton(
-                    tooltip: 'Deshacer (Ctrl+Z)',
-                    onPressed: history.canUndo ? _undo : null,
-                    icon: const Icon(Icons.undo),
-                  ),
-                  IconButton(
-                    tooltip: 'Rehacer (Ctrl+Y)',
-                    onPressed: history.canRedo ? _redo : null,
-                    icon: const Icon(Icons.redo),
-                  ),
-                  const SizedBox(width: 8),
-                  if (testing)
-                    FilledButton.icon(
-                      style: FilledButton.styleFrom(backgroundColor: Colors.greenAccent.shade700),
-                      onPressed: () => _setTesting(false),
-                      icon: const Icon(Icons.stop),
-                      label: const Text('Probando'),
-                    )
-                  else
-                    FilledButton.tonalIcon(
-                      onPressed: song.chords.isEmpty ? null : () => _setTesting(true),
-                      icon: const Icon(Icons.piano),
-                      label: const Text('Probar'),
-                    ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _recordNew(),
-                    icon: const Icon(Icons.fiber_manual_record, color: Color(0xFFE53935)),
-                    label: const Text('Grabar sección'),
-                  ),
-                  const SizedBox(width: 8),
-                  OutlinedButton.icon(
-                    onPressed: () => _addSection(),
-                    icon: const Icon(Icons.add),
-                    label: const Text('Escribir sección'),
-                  ),
-                  const SizedBox(width: 4),
-                  SettingsButton(settings: settings),
-                  FilledButton.icon(
-                    onPressed: widget.onDone,
-                    icon: const Icon(Icons.check),
-                    label: const Text('Listo'),
-                  ),
-                  const SizedBox(width: 12),
-                ],
-              ),
-              body: Padding(
-                padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                child: Column(
-                  children: [
-                    if (testing) SizedBox(height: 150, child: _testStrip()),
-                    if (testing) const SizedBox(height: 8),
-                    Expanded(
-                      child: Row(
-                        crossAxisAlignment: CrossAxisAlignment.stretch,
+              body: context.isCompact
+                  ? _compactBody()
+                  : Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                      child: Column(
                         children: [
-                          Expanded(child: _chart()),
-                          const SizedBox(width: 16),
-                          SizedBox(width: 290, child: _palette()),
+                          if (testing) SizedBox(height: 150, child: _testStrip()),
+                          if (testing) const SizedBox(height: 8),
+                          Expanded(
+                            child: Row(
+                              crossAxisAlignment: CrossAxisAlignment.stretch,
+                              children: [
+                                Expanded(child: _chart()),
+                                const SizedBox(width: 16),
+                                SizedBox(width: 290, child: _palette()),
+                              ],
+                            ),
+                          ),
                         ],
                       ),
                     ),
-                  ],
-                ),
-              ),
             ),
           ),
         ),
+      ),
+    );
+  }
+
+  // ── Teléfono ─────────────────────────────────────────────────────────
+
+  PreferredSizeWidget _compactBar() {
+    return AppBar(
+      leading: IconButton(tooltip: 'Terminar de editar', onPressed: widget.onDone, icon: const Icon(Icons.arrow_back)),
+      titleSpacing: 0,
+      title: InkWell(
+        onTap: _rename,
+        child: Text(song.title, overflow: TextOverflow.ellipsis),
+      ),
+      actions: [
+        IconButton(tooltip: 'Deshacer', onPressed: history.canUndo ? _undo : null, icon: const Icon(Icons.undo)),
+        IconButton(tooltip: 'Rehacer', onPressed: history.canRedo ? _redo : null, icon: const Icon(Icons.redo)),
+        IconButton(
+          tooltip: testing ? 'Dejar de probar' : 'Probar con el piano',
+          isSelected: testing,
+          style: testing ? IconButton.styleFrom(backgroundColor: Colors.greenAccent.shade700) : null,
+          onPressed: song.chords.isEmpty ? null : () => _setTesting(!testing),
+          icon: Icon(testing ? Icons.stop : Icons.piano),
+        ),
+        PopupMenuButton<String>(
+          onSelected: (v) => switch (v) {
+            'record' => _recordNew(),
+            'write' => _addSection(),
+            'key' => _changeKey(),
+            _ => showSettings(context, settings),
+          },
+          itemBuilder: (_) => const [
+            PopupMenuItem(value: 'record', child: Text('Grabar sección con el piano')),
+            PopupMenuItem(value: 'write', child: Text('Escribir sección')),
+            PopupMenuItem(value: 'key', child: Text('Cambiar tonalidad')),
+            PopupMenuItem(value: 'settings', child: Text('Configuración')),
+          ],
+        ),
+        IconButton(tooltip: 'Listo', onPressed: widget.onDone, icon: const Icon(Icons.check)),
+      ],
+    );
+  }
+
+  Widget _compactBody() {
+    return Column(
+      children: [
+        if (testing) Padding(padding: const EdgeInsets.fromLTRB(8, 0, 8, 6), child: _testStripCompact()),
+        Expanded(
+          child: Padding(padding: const EdgeInsets.symmetric(horizontal: 8), child: _chart()),
+        ),
+        _paletteStrip(),
+      ],
+    );
+  }
+
+  /// Prueba en el teléfono: Ahora y Sigue en una fila, el estado debajo.
+  Widget _testStripCompact() {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final f = live!.follower;
+    final current = f.position < 0 ? null : f.position;
+    final next = f.next;
+    final played = f.lastPlayed;
+    final key = next == null ? song.key : song.keyAt(next);
+    String name(Chord c) => fmt.format(c, spell: key?.spell);
+    final offScript = f.status == FollowStatus.offScript && played != null && next != null;
+
+    Widget card(String title, int? index, {required bool main}) => Expanded(
+      flex: main ? 3 : 2,
+      child: Card(
+        margin: EdgeInsets.zero,
+        color: main ? scheme.primaryContainer : null,
+        child: Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 12, 6),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(title, style: text.labelMedium),
+              SizedBox(
+                height: 40,
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  alignment: Alignment.centerLeft,
+                  child: Text(
+                    index == null ? '—' : _chordText(index),
+                    style: TextStyle(
+                      fontSize: 34,
+                      fontWeight: FontWeight.w700,
+                      color: main ? scheme.onPrimaryContainer : repeatColor,
+                    ),
+                  ),
+                ),
+              ),
+              Text(
+                index == null ? '' : _whereLabel(index),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.labelSmall?.copyWith(color: main ? scheme.onPrimaryContainer : scheme.onSurfaceVariant),
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+
+    final (label, color) = switch (f.status) {
+      FollowStatus.waiting => ('Toca el primer acorde', scheme.onSurfaceVariant),
+      FollowStatus.onTrack => ('En curso', Colors.greenAccent),
+      FollowStatus.jumped => ('Saltaste', scheme.tertiary),
+      FollowStatus.offScript => (
+        'Tocaste ${played == null ? '' : name(played)}: no es lo que sigue',
+        Colors.amberAccent,
+      ),
+      FollowStatus.finished => ('¡Fin de la canción!', Colors.greenAccent),
+    };
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Row(children: [card('Ahora', current, main: true), const SizedBox(width: 6), card('Sigue', next, main: false)]),
+        Row(
+          children: [
+            Expanded(
+              child: Text(
+                widget.midi.connected == null ? 'Piano desconectado' : label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: text.bodyMedium?.copyWith(color: widget.midi.connected == null ? scheme.error : color),
+              ),
+            ),
+            IconButton(
+              tooltip: 'Desde el inicio',
+              visualDensity: VisualDensity.compact,
+              onPressed: live!.restart,
+              icon: const Icon(Icons.replay),
+            ),
+          ],
+        ),
+        if (offScript)
+          Wrap(
+            spacing: 6,
+            runSpacing: 4,
+            children: [
+              FilledButton.tonal(
+                onPressed: () => _fixReplace(next, played),
+                child: Text('Cambiar por ${name(played)}'),
+              ),
+              OutlinedButton(onPressed: () => _fixInsert(next, played), child: Text('Agregar antes')),
+            ],
+          ),
+      ],
+    );
+  }
+
+  /// Paleta del teléfono: una tira abajo; al mover un acorde, es la papelera.
+  Widget _paletteStrip() {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final key = song.key;
+    if (movingChord) {
+      return DragTarget<_DragItem>(
+        onWillAcceptWithDetails: (d) => d.data is _MoveItem,
+        onAcceptWithDetails: (d) {
+          final item = d.data as _MoveItem;
+          _mutate(() => song.removeChord(item.occurrence, item.offset));
+          _toast('Acorde eliminado', undo: true);
+        },
+        builder: (context, candidates, _) => Container(
+          height: 64,
+          margin: const EdgeInsets.fromLTRB(8, 4, 8, 8),
+          decoration: BoxDecoration(
+            color: candidates.isEmpty ? scheme.errorContainer.withValues(alpha: 0.4) : scheme.errorContainer,
+            borderRadius: BorderRadius.circular(14),
+            border: Border.all(color: scheme.error, width: 2),
+          ),
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.center,
+            children: [
+              Icon(Icons.delete_outline, color: scheme.onErrorContainer),
+              const SizedBox(width: 8),
+              Text('Suelta aquí para eliminar', style: text.titleSmall?.copyWith(color: scheme.onErrorContainer)),
+            ],
+          ),
+        ),
+      );
+    }
+    final counts = <Chord, int>{};
+    for (final c in song.chords) {
+      counts[c.chord] = (counts[c.chord] ?? 0) + 1;
+    }
+    final used = counts.keys.toList()..sort((a, b) => counts[b]!.compareTo(counts[a]!));
+    final chords = {...?key?.diatonicChords, ...used.take(12)}.toList();
+
+    Widget chip(Chord chord, {Color? color}) {
+      Widget body({double elevation = 0}) => Material(
+        color: color ?? scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        elevation: elevation,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+          child: Text(fmt.format(chord, spell: key?.spell), style: text.titleMedium),
+        ),
+      );
+      return Padding(
+        padding: const EdgeInsets.only(right: 6),
+        child: _draggable(data: _NewItem(chord), feedback: body(elevation: 8), child: body(), longPressOnly: true),
+      );
+    }
+
+    return Container(
+      height: 56,
+      margin: const EdgeInsets.only(top: 4),
+      decoration: BoxDecoration(
+        border: Border(top: BorderSide(color: scheme.outlineVariant)),
+      ),
+      child: ListenableBuilder(
+        listenable: engine,
+        builder: (context, _) {
+          final played = engine.current?.chord;
+          return ListView(
+            scrollDirection: Axis.horizontal,
+            padding: const EdgeInsets.fromLTRB(8, 8, 8, 8),
+            children: [
+              Center(
+                child: Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: Text('Mantén y arrastra', style: text.labelSmall?.copyWith(color: scheme.onSurfaceVariant)),
+                ),
+              ),
+              if (played != null) chip(played, color: scheme.tertiaryContainer),
+              for (final c in chords) chip(c),
+            ],
+          );
+        },
       ),
     );
   }
@@ -883,6 +1145,7 @@ class _SongEditorState extends State<SongEditor> {
     final passes = o.length ~/ pass;
     final playingHere = testing && current != null;
     final position = live?.follower.position ?? -1;
+    final compact = context.isCompact;
     final note = section?.note;
     final modulations = {
       for (final (r, region) in song.keyRegions.indexed)
@@ -890,8 +1153,8 @@ class _SongEditorState extends State<SongEditor> {
     };
 
     return Container(
-      margin: const EdgeInsets.only(top: 12),
-      padding: const EdgeInsets.fromLTRB(12, 6, 6, 12),
+      margin: EdgeInsets.only(top: compact ? 8 : 12),
+      padding: compact ? const EdgeInsets.fromLTRB(8, 2, 2, 8) : const EdgeInsets.fromLTRB(12, 6, 6, 12),
       decoration: BoxDecoration(
         borderRadius: BorderRadius.circular(16),
         border: Border.all(color: playingHere ? scheme.primary : scheme.outlineVariant.withValues(alpha: 0.5)),
@@ -901,24 +1164,32 @@ class _SongEditorState extends State<SongEditor> {
         children: [
           Row(
             children: [
-              InkWell(
-                borderRadius: BorderRadius.circular(8),
-                onTap: () => _editSection(i),
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
-                  child: Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(section?.label ?? '—', style: text.titleLarge?.copyWith(color: scheme.primary)),
-                      const SizedBox(width: 6),
-                      Icon(Icons.edit, size: 16, color: scheme.onSurfaceVariant),
-                    ],
+              Flexible(
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(8),
+                  onTap: () => _editSection(i),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 6),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Flexible(
+                          child: Text(
+                            section?.label ?? '—',
+                            overflow: TextOverflow.ellipsis,
+                            style: (compact ? text.titleMedium : text.titleLarge)?.copyWith(color: scheme.primary),
+                          ),
+                        ),
+                        const SizedBox(width: 6),
+                        Icon(Icons.edit, size: 16, color: scheme.onSurfaceVariant),
+                      ],
+                    ),
                   ),
                 ),
               ),
               const SizedBox(width: 8),
               _repeatStepper(i, passes),
-              if (playingHere && passes > 1) ...[
+              if (playingHere && passes > 1 && !compact) ...[
                 const SizedBox(width: 12),
                 Text(
                   'vuelta ${o.passOf(position)} de $passes',
@@ -926,24 +1197,45 @@ class _SongEditorState extends State<SongEditor> {
                 ),
               ],
               const Spacer(),
-              TextButton.icon(
-                onPressed: () => _rerecord(i),
-                icon: const Icon(Icons.fiber_manual_record, color: Color(0xFFE53935), size: 18),
-                label: const Text('Regrabar'),
-              ),
-              IconButton(
-                tooltip: 'Subir',
-                onPressed: i > 0 ? () => _sectionAction(i, 'up') : null,
-                icon: const Icon(Icons.arrow_upward),
-              ),
-              IconButton(
-                tooltip: 'Bajar',
-                onPressed: i + 1 < song.arrangement.length ? () => _sectionAction(i, 'down') : null,
-                icon: const Icon(Icons.arrow_downward),
-              ),
+              if (!compact) ...[
+                TextButton.icon(
+                  onPressed: () => _rerecord(i),
+                  icon: const Icon(Icons.fiber_manual_record, color: Color(0xFFE53935), size: 18),
+                  label: const Text('Regrabar'),
+                ),
+                IconButton(
+                  tooltip: 'Subir',
+                  onPressed: i > 0 ? () => _sectionAction(i, 'up') : null,
+                  icon: const Icon(Icons.arrow_upward),
+                ),
+                IconButton(
+                  tooltip: 'Bajar',
+                  onPressed: i + 1 < song.arrangement.length ? () => _sectionAction(i, 'down') : null,
+                  icon: const Icon(Icons.arrow_downward),
+                ),
+              ],
               PopupMenuButton<String>(
-                onSelected: (a) => _sectionAction(i, a),
+                onSelected: (a) => a == 'rerecord' ? _rerecord(i) : _sectionAction(i, a),
                 itemBuilder: (_) => [
+                  if (compact) ...[
+                    const PopupMenuItem(
+                      value: 'rerecord',
+                      child: ListTile(
+                        leading: Icon(Icons.fiber_manual_record, color: Color(0xFFE53935)),
+                        title: Text('Regrabar con el piano'),
+                      ),
+                    ),
+                    if (i > 0)
+                      const PopupMenuItem(
+                        value: 'up',
+                        child: ListTile(leading: Icon(Icons.arrow_upward), title: Text('Subir')),
+                      ),
+                    if (i + 1 < song.arrangement.length)
+                      const PopupMenuItem(
+                        value: 'down',
+                        child: ListTile(leading: Icon(Icons.arrow_downward), title: Text('Bajar')),
+                      ),
+                  ],
                   const PopupMenuItem(
                     value: 'edit',
                     child: ListTile(leading: Icon(Icons.edit), title: Text('Editar nombre, acordes y nota')),
@@ -988,14 +1280,14 @@ class _SongEditorState extends State<SongEditor> {
             ),
           const SizedBox(height: 4),
           Wrap(
-            spacing: 8,
-            runSpacing: 8,
+            spacing: compact ? 6 : 8,
+            runSpacing: compact ? 6 : 8,
             crossAxisAlignment: WrapCrossAlignment.center,
             children: [
               for (var k = 0; k < pass; k++) ...[
                 if (modulations[k] case final key?)
                   Container(
-                    height: 84,
+                    height: ChordCell.heightOf(context),
                     padding: const EdgeInsets.symmetric(horizontal: 8),
                     decoration: BoxDecoration(
                       border: Border.all(color: scheme.tertiary),
@@ -1024,8 +1316,8 @@ class _SongEditorState extends State<SongEditor> {
                     borderRadius: BorderRadius.circular(12),
                     onTap: () => _insert(i, pass),
                     child: Container(
-                      width: 64,
-                      height: 84,
+                      width: context.isCompact ? 48 : 64,
+                      height: ChordCell.heightOf(context),
                       decoration: BoxDecoration(
                         borderRadius: BorderRadius.circular(12),
                         border: Border.all(color: scheme.outlineVariant),
@@ -1082,16 +1374,16 @@ class _SongEditorState extends State<SongEditor> {
     final index = o.start + k;
     final e = song.chords[index];
     Widget cell({bool interactive = true}) => ChordCell(
-          chord: e.chord,
-          musicKey: song.keyAt(index),
-          settings: settings,
-          confidence: e.confidence,
-          beats: e.beats,
-          edited: e.edited,
-          highlight: current,
-          ring: next ? repeatColor : null,
-          onTap: interactive ? () => _tapChord(i, k) : null,
-        );
+      chord: e.chord,
+      musicKey: song.keyAt(index),
+      settings: settings,
+      confidence: e.confidence,
+      beats: e.beats,
+      edited: e.edited,
+      highlight: current,
+      ring: next ? repeatColor : null,
+      onTap: interactive ? () => _tapChord(i, k) : null,
+    );
     return KeyedSubtree(
       key: _cellKeys.putIfAbsent(index, GlobalKey.new),
       child: _draggable(
@@ -1116,14 +1408,14 @@ class _SongEditorState extends State<SongEditor> {
     Widget chip(Chord chord, {Color? color}) {
       final label = fmt.format(chord, spell: key?.spell);
       Widget body({double elevation = 0}) => Material(
-            color: color ?? scheme.surfaceContainerHighest,
-            borderRadius: BorderRadius.circular(10),
-            elevation: elevation,
-            child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
-              child: Text(label, style: text.titleLarge),
-            ),
-          );
+        color: color ?? scheme.surfaceContainerHighest,
+        borderRadius: BorderRadius.circular(10),
+        elevation: elevation,
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+          child: Text(label, style: text.titleLarge),
+        ),
+      );
       return _draggable(data: _NewItem(chord), feedback: body(elevation: 8), child: body());
     }
 
@@ -1174,7 +1466,10 @@ class _SongEditorState extends State<SongEditor> {
               final c = engine.current?.chord;
               return c == null
                   ? Text('Toca un acorde y arrástralo', style: TextStyle(color: scheme.onSurfaceVariant))
-                  : Align(alignment: Alignment.centerLeft, child: chip(c, color: scheme.tertiaryContainer));
+                  : Align(
+                      alignment: Alignment.centerLeft,
+                      child: chip(c, color: scheme.tertiaryContainer),
+                    );
             },
           ),
           if (key != null) ...[

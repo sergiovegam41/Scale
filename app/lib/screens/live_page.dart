@@ -10,6 +10,7 @@ import '../widgets/connection_status.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/key_panel.dart';
 import '../widgets/piano_keyboard.dart';
+import '../widgets/responsive.dart';
 import '../widgets/settings_sheet.dart';
 import 'midi_test_page.dart';
 
@@ -44,20 +45,15 @@ class LivePage extends StatelessWidget {
     }
     final messenger = ScaffoldMessenger.of(context);
     final take = engine.stopRecording();
-    final song = take == null
-        ? null
-        : SongAnalyzer.fromTake(title: defaultTitle(take.recordedAt), take: take);
+    final song = take == null ? null : SongAnalyzer.fromTake(title: defaultTitle(take.recordedAt), take: take);
     if (song == null || song.chords.isEmpty) {
       messenger.showSnackBar(const SnackBar(content: Text('No se grabó ningún acorde')));
       return;
     }
-    final summary = '${song.chords.length} acordes'
+    final summary =
+        '${song.chords.length} acordes'
         '${song.key == null ? '' : ' · ${song.key!.label(settings.notation)}'}';
-    final title = await askText(
-      context,
-      title: 'Guardar canción ($summary)',
-      initial: song.title,
-    );
+    final title = await askText(context, title: 'Guardar canción ($summary)', initial: song.title);
     if (title == null) {
       messenger.showSnackBar(const SnackBar(content: Text('Grabación descartada')));
       return;
@@ -75,52 +71,110 @@ class LivePage extends StatelessWidget {
       body: SafeArea(
         child: ListenableBuilder(
           listenable: Listenable.merge([engine, settings, keyboard]),
-          builder: (context, _) => Column(
-            children: [
-              _TopBar(
-                midi: midi,
-                engine: engine,
-                settings: settings,
-                onRecord: () => _toggleRecording(context),
-                onClear: engine.reset,
-                onDiagnostics: () => Navigator.of(context).push(
-                  MaterialPageRoute(
-                    builder: (_) => MidiTestPage(midi: midi, keyboard: keyboard, settings: settings),
-                  ),
-                ),
-              ),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _CurrentChord(engine: engine, settings: settings)),
-                      const SizedBox(width: 16),
-                      SizedBox(
-                        width: 340,
-                        child: KeyPanel(
-                          estimate: engine.key,
-                          notation: settings.notation,
-                          previousKey: engine.previousKey,
-                          layer: engine.layer,
+          builder: (context, _) => context.isCompact
+              ? _compact(context)
+              : Column(
+                  children: [
+                    _TopBar(
+                      midi: midi,
+                      engine: engine,
+                      settings: settings,
+                      onRecord: () => _toggleRecording(context),
+                      onClear: engine.reset,
+                      onDiagnostics: () => Navigator.of(context).push(
+                        MaterialPageRoute(
+                          builder: (_) => MidiTestPage(midi: midi, keyboard: keyboard, settings: settings),
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 16),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: [
+                            Expanded(
+                              child: _CurrentChord(engine: engine, settings: settings),
+                            ),
+                            const SizedBox(width: 16),
+                            SizedBox(
+                              width: 340,
+                              child: KeyPanel(
+                                estimate: engine.key,
+                                notation: settings.notation,
+                                previousKey: engine.previousKey,
+                                layer: engine.layer,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    _Sequence(engine: engine, settings: settings),
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      height: 100,
+                      child: PianoKeyboard(held: keyboard.held, sustained: keyboard.sustained),
+                    ),
+                  ],
                 ),
-              ),
-              const SizedBox(height: 12),
-              _Sequence(engine: engine, settings: settings),
-              const SizedBox(height: 12),
-              SizedBox(
-                height: 100,
-                child: PianoKeyboard(held: keyboard.held, sustained: keyboard.sustained),
-              ),
-            ],
-          ),
         ),
       ),
+    );
+  }
+}
+
+extension on LivePage {
+  /// Teléfono: todo apilado; la tonalidad en una franja que abre su panel.
+  Widget _compact(BuildContext context) {
+    final short = context.screen.height < 500;
+    return Column(
+      children: [
+        _TopBar(
+          midi: midi,
+          engine: engine,
+          settings: settings,
+          compact: true,
+          onRecord: () => _toggleRecording(context),
+          onClear: engine.reset,
+          onDiagnostics: () => Navigator.of(context).push(
+            MaterialPageRoute(
+              builder: (_) => MidiTestPage(midi: midi, keyboard: keyboard, settings: settings),
+            ),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 12),
+          child: KeySummary(
+            estimate: engine.key,
+            notation: settings.notation,
+            panel: (_) => KeyPanel(
+              estimate: engine.key,
+              notation: settings.notation,
+              previousKey: engine.previousKey,
+              layer: engine.layer,
+            ),
+          ),
+        ),
+        const SizedBox(height: 8),
+        Expanded(
+          child: Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 12),
+            child: _CurrentChord(engine: engine, settings: settings),
+          ),
+        ),
+        const SizedBox(height: 8),
+        _Sequence(engine: engine, settings: settings),
+        if (!short) ...[
+          const SizedBox(height: 8),
+          SizedBox(
+            height: 64,
+            child: PianoKeyboard(held: keyboard.held, sustained: keyboard.sustained),
+          ),
+        ],
+        const SizedBox(height: 4),
+      ],
     );
   }
 }
@@ -133,11 +187,13 @@ class _TopBar extends StatelessWidget {
     required this.onRecord,
     required this.onClear,
     required this.onDiagnostics,
+    this.compact = false,
   });
 
   final MidiService midi;
   final ChordEngine engine;
   final AppSettings settings;
+  final bool compact;
   final VoidCallback onRecord;
   final VoidCallback onClear;
   final VoidCallback onDiagnostics;
@@ -149,15 +205,73 @@ class _TopBar extends StatelessWidget {
     final elapsed = engine.recordingElapsed.inSeconds;
     final clock = '${elapsed ~/ 60}:${(elapsed % 60).toString().padLeft(2, '0')}';
     const red = Color(0xFFE53935);
+    final transpose = _TransposeControl(
+      engine: engine,
+      range: settings.transposeRange,
+      onChanged: (v) {
+        engine.layer = v;
+        settings.liveLayer = engine.layer;
+      },
+    );
+    if (compact) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+        child: Column(
+          children: [
+            Row(
+              children: [
+                FilledButton.icon(
+                  style: FilledButton.styleFrom(
+                    backgroundColor: recording ? red : scheme.surfaceContainerHighest,
+                    foregroundColor: recording ? Colors.white : scheme.onSurface,
+                  ),
+                  onPressed: onRecord,
+                  icon: Icon(recording ? Icons.stop : Icons.fiber_manual_record, color: recording ? Colors.white : red),
+                  label: Text(recording ? 'Detener  $clock' : 'Grabar'),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: ConnectionStatus(midi: midi),
+                  ),
+                ),
+                PopupMenuButton<String>(
+                  onSelected: (v) => switch (v) {
+                    'clear' => onClear(),
+                    'diag' => onDiagnostics(),
+                    _ => showSettings(context, settings),
+                  },
+                  itemBuilder: (_) => [
+                    PopupMenuItem(value: 'clear', enabled: !recording, child: const Text('Borrar secuencia')),
+                    const PopupMenuItem(value: 'diag', child: Text('Diagnóstico MIDI')),
+                    const PopupMenuItem(value: 'settings', child: Text('Configuración')),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 4),
+            Row(
+              children: [
+                Text(
+                  recording ? '● Grabando' : 'Modo libre',
+                  style: Theme.of(context).textTheme.titleMedium?.copyWith(color: recording ? red : scheme.onSurface),
+                ),
+                const Spacer(),
+                transpose,
+              ],
+            ),
+          ],
+        ),
+      );
+    }
     return Padding(
       padding: const EdgeInsets.fromLTRB(16, 8, 8, 8),
       child: Row(
         children: [
           Text(
             recording ? '● Grabando' : 'Modo libre',
-            style: Theme.of(context).textTheme.titleLarge?.copyWith(
-                  color: recording ? red : scheme.onSurface,
-                ),
+            style: Theme.of(context).textTheme.titleLarge?.copyWith(color: recording ? red : scheme.onSurface),
           ),
           const SizedBox(width: 16),
           FilledButton.icon(
@@ -173,14 +287,7 @@ class _TopBar extends StatelessWidget {
           const SizedBox(width: 16),
           ConnectionStatus(midi: midi),
           const Spacer(),
-          _TransposeControl(
-            engine: engine,
-            range: settings.transposeRange,
-            onChanged: (v) {
-              engine.layer = v;
-              settings.liveLayer = engine.layer;
-            },
-          ),
+          transpose,
           const SizedBox(width: 8),
           IconButton(
             tooltip: 'Borrar secuencia',
@@ -231,10 +338,7 @@ class _TransposeControl extends StatelessWidget {
               onLongPress: enabled ? () => onChanged(0) : null,
               child: Text(
                 'Transpose ${TransposeAdvice.label(layer)}',
-                style: TextStyle(
-                  fontWeight: FontWeight.w600,
-                  color: layer == 0 ? scheme.onSurface : scheme.tertiary,
-                ),
+                style: TextStyle(fontWeight: FontWeight.w600, color: layer == 0 ? scheme.onSurface : scheme.tertiary),
               ),
             ),
             IconButton(
@@ -263,10 +367,7 @@ class _CurrentChord extends StatelessWidget {
     if (current == null) {
       return Card(
         child: Center(
-          child: Text(
-            'Toca un acorde…',
-            style: text.headlineMedium?.copyWith(color: scheme.onSurfaceVariant),
-          ),
+          child: Text('Toca un acorde…', style: text.headlineMedium?.copyWith(color: scheme.onSurfaceVariant)),
         ),
       );
     }
@@ -279,7 +380,9 @@ class _CurrentChord extends StatelessWidget {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 16),
+        padding: context.isCompact
+            ? const EdgeInsets.fromLTRB(16, 10, 16, 10)
+            : const EdgeInsets.fromLTRB(24, 16, 24, 16),
         child: Column(
           children: [
             Expanded(
@@ -319,14 +422,14 @@ class _CurrentChord extends StatelessWidget {
                 Text('Seguridad ${(current.confidence * 100).round()} %', style: text.labelLarge),
                 const SizedBox(width: 12),
                 SizedBox(
-                  width: 120,
+                  width: context.isCompact ? 56 : 120,
                   child: LinearProgressIndicator(
                     value: current.confidence,
                     minHeight: 6,
                     borderRadius: BorderRadius.circular(3),
                   ),
                 ),
-                const SizedBox(width: 24),
+                SizedBox(width: context.isCompact ? 12 : 24),
                 if (alternatives.isNotEmpty)
                   Expanded(
                     child: Text(
@@ -360,10 +463,7 @@ class _Sequence extends StatelessWidget {
       height: 72,
       child: chords.isEmpty
           ? Center(
-              child: Text(
-                'Aquí aparecerá la secuencia de acordes',
-                style: TextStyle(color: scheme.onSurfaceVariant),
-              ),
+              child: Text('Aquí aparecerá la secuencia de acordes', style: TextStyle(color: scheme.onSurfaceVariant)),
             )
           : ListView.separated(
               scrollDirection: Axis.horizontal,

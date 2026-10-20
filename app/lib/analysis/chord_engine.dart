@@ -32,8 +32,14 @@ class ChordEngine extends ChangeNotifier {
     if (recording || value == _layer) return;
     _layer = value;
     analyzer.reset();
-    notifyListeners();
+    // Cambia al abrir o cerrar una pantalla (en plena construcción de la
+    // interfaz): se avisa apenas termine, no en medio.
+    scheduleMicrotask(() {
+      if (!_disposed) notifyListeners();
+    });
   }
+
+  bool _disposed = false;
 
   /// Semitonos que hay que restar a lo que llega para obtener las figuras.
   int get _inputShift => settings.pianoSendsTransposed ? -_layer : 0;
@@ -122,6 +128,7 @@ class ChordEngine extends ChangeNotifier {
 
   @override
   void dispose() {
+    _disposed = true;
     _closeTimer?.cancel();
     _clockTimer?.cancel();
     _sub.cancel();

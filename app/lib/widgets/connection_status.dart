@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_midi_command/flutter_midi_command.dart';
 
 import '../midi/midi_service.dart';
+import 'responsive.dart';
 
 /// Estado de la conexión MIDI con acciones para elegir o reconectar.
 class ConnectionStatus extends StatelessWidget {
@@ -25,13 +26,15 @@ class ConnectionStatus extends StatelessWidget {
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Tooltip(
-              message: midi.error ?? label,
-              child: Chip(
-                avatar: Icon(icon, color: color, size: 18),
-                label: ConstrainedBox(
-                  constraints: const BoxConstraints(maxWidth: 260),
-                  child: Text(label, overflow: TextOverflow.ellipsis),
+            Flexible(
+              child: Tooltip(
+                message: midi.error ?? label,
+                child: Chip(
+                  avatar: Icon(icon, color: color, size: 18),
+                  label: ConstrainedBox(
+                    constraints: BoxConstraints(maxWidth: context.isCompact ? 150 : 260),
+                    child: Text(label, overflow: TextOverflow.ellipsis),
+                  ),
                 ),
               ),
             ),
@@ -40,24 +43,15 @@ class ConnectionStatus extends StatelessWidget {
               DropdownButton<String>(
                 value: device?.id,
                 hint: const Text('Elegir'),
-                items: [
-                  for (final d in midi.devices) DropdownMenuItem(value: d.id, child: Text(d.name)),
-                ],
+                items: [for (final d in midi.devices) DropdownMenuItem(value: d.id, child: Text(d.name))],
                 onChanged: (id) => midi.connect(midi.devices.firstWhere((d) => d.id == id)),
               ),
             ],
             if (device == null && midi.devices.isNotEmpty && !midi.connecting) ...[
               const SizedBox(width: 8),
-              FilledButton(
-                onPressed: () => midi.connect(midi.devices.first),
-                child: const Text('Conectar'),
-              ),
+              FilledButton(onPressed: () => midi.connect(midi.devices.first), child: const Text('Conectar')),
             ],
-            IconButton(
-              tooltip: 'Buscar dispositivos',
-              onPressed: midi.refresh,
-              icon: const Icon(Icons.refresh),
-            ),
+            IconButton(tooltip: 'Buscar dispositivos', onPressed: midi.refresh, icon: const Icon(Icons.refresh)),
           ],
         );
       },

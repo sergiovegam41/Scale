@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:scale_core/scale_core.dart';
 
 import '../settings.dart';
+import 'responsive.dart';
 
 /// Un acorde de la partitura: cifrado, grado o ambos según la preferencia.
 class ChordCell extends StatelessWidget {
@@ -33,6 +34,9 @@ class ChordCell extends StatelessWidget {
   final int? beats;
   final bool edited;
 
+  /// Alto de una celda (y de lo que va a su lado en la partitura).
+  static double heightOf(BuildContext context) => context.isCompact ? 64 : 84;
+
   // Prima (′) y no apóstrofo: dos apóstrofos se leen como comillas.
   static String ticks(int? beats) => beats == null ? '' : '′' * beats;
   final bool highlight;
@@ -52,6 +56,7 @@ class ChordCell extends StatelessWidget {
     };
     final doubtful = !edited && confidence != null && confidence! < doubtfulBelow;
     final fg = highlight ? scheme.onPrimaryContainer : scheme.onSurface;
+    final compact = context.isCompact;
 
     return Material(
       color: highlight ? scheme.primaryContainer : scheme.surfaceContainerHigh,
@@ -63,9 +68,9 @@ class ChordCell extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: onTap,
         child: Container(
-          constraints: const BoxConstraints(minWidth: 104),
-          height: 84,
-          padding: const EdgeInsets.symmetric(horizontal: 14),
+          constraints: BoxConstraints(minWidth: compact ? 66 : 104),
+          height: heightOf(context),
+          padding: EdgeInsets.symmetric(horizontal: compact ? 10 : 14),
           // Stack centrado (no Center) para que la celda mida lo que su texto.
           child: Stack(
             alignment: Alignment.center,
@@ -85,12 +90,12 @@ class ChordCell extends StatelessWidget {
                           ),
                       ],
                     ),
-                    style: TextStyle(fontSize: 28, fontWeight: FontWeight.w600, color: fg),
+                    style: TextStyle(fontSize: compact ? 21 : 28, fontWeight: FontWeight.w600, color: fg),
                   ),
                   if (secondary != null)
                     Text(
                       secondary,
-                      style: TextStyle(fontSize: 14, color: fg.withValues(alpha: 0.7)),
+                      style: TextStyle(fontSize: compact ? 12 : 14, color: fg.withValues(alpha: 0.7)),
                     ),
                 ],
               ),

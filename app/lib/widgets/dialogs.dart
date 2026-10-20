@@ -23,16 +23,18 @@ Future<String?> askText(
       ),
       actions: [
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        FilledButton(
-          onPressed: () => Navigator.pop(context, controller.text.trim()),
-          child: Text(confirm),
-        ),
+        FilledButton(onPressed: () => Navigator.pop(context, controller.text.trim()), child: Text(confirm)),
       ],
     ),
   );
 }
 
-Future<bool> confirm(BuildContext context, {required String title, required String message, String action = 'Eliminar'}) async {
+Future<bool> confirm(
+  BuildContext context, {
+  required String title,
+  required String message,
+  String action = 'Eliminar',
+}) async {
   final result = await showDialog<bool>(
     context: context,
     builder: (context) => AlertDialog(
@@ -85,10 +87,7 @@ Future<(String, SectionKind, String)?> askSection(BuildContext context, SectionD
               const SizedBox(height: 16),
               TextField(
                 controller: controller,
-                decoration: const InputDecoration(
-                  labelText: 'Nombre (p. ej. Verso 2)',
-                  border: OutlineInputBorder(),
-                ),
+                decoration: const InputDecoration(labelText: 'Nombre (p. ej. Verso 2)', border: OutlineInputBorder()),
               ),
               const SizedBox(height: 16),
               TextField(
@@ -164,10 +163,7 @@ Future<SectionChoice?> chooseSection(
                     runSpacing: 8,
                     children: [
                       for (final s in existing)
-                        ActionChip(
-                          label: Text(s.label),
-                          onPressed: () => Navigator.pop(context, ExistingSection(s)),
-                        ),
+                        ActionChip(label: Text(s.label), onPressed: () => Navigator.pop(context, ExistingSection(s))),
                     ],
                   ),
                   const Divider(height: 32),
@@ -357,10 +353,7 @@ Future<Chord?> pickChord(
                   labelText: 'Escribir cifrado (D/F#, Sol7, Rem…)',
                   border: const OutlineInputBorder(),
                   errorText: error,
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.check),
-                    onPressed: () => submit(controller.text),
-                  ),
+                  suffixIcon: IconButton(icon: const Icon(Icons.check), onPressed: () => submit(controller.text)),
                 ),
                 onSubmitted: submit,
               ),
@@ -421,7 +414,10 @@ Future<ChordEdit?> editChord(
                   ],
                   const Spacer(),
                   if (where != null)
-                    Text(where, style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant)),
+                    Text(
+                      where,
+                      style: text.bodyMedium?.copyWith(color: Theme.of(context).colorScheme.onSurfaceVariant),
+                    ),
                 ],
               ),
               if (canFollow) ...[
@@ -485,10 +481,7 @@ Future<ChordEdit?> editChord(
                   labelText: 'Escribir cifrado (D/F#, Sol7, Rem…)',
                   border: const OutlineInputBorder(),
                   errorText: error,
-                  suffixIcon: IconButton(
-                    icon: const Icon(Icons.check),
-                    onPressed: () => submit(controller.text),
-                  ),
+                  suffixIcon: IconButton(icon: const Icon(Icons.check), onPressed: () => submit(controller.text)),
                 ),
                 onSubmitted: submit,
               ),
@@ -550,70 +543,65 @@ Future<int?> pickTranspose(
         title: Text('Transportar desde ${original.label(notation)}'),
         content: SizedBox(
           width: 640,
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                '¿En qué tonalidad la quieren? Pon esos semitonos en el TRANSPOSE del piano '
-                'y sigue tocando con las figuras de ${original.name(notation)}.',
-                style: text.bodyMedium,
-              ),
-              const SizedBox(height: 16),
-              Wrap(
-                spacing: 8,
-                runSpacing: 8,
-                children: [
-                  for (var s = 0; s < 12; s++)
-                    () {
-                      final target = original.transpose(s);
-                      final advice = TransposeAdvice.between(original, target, range: range);
-                      final selected = current % 12 == s;
-                      return Container(
-                        width: 196,
-                        padding: const EdgeInsets.all(10),
-                        decoration: BoxDecoration(
-                          color: selected ? scheme.tertiaryContainer : scheme.surfaceContainerHigh,
-                          borderRadius: BorderRadius.circular(12),
-                        ),
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Text(
-                              target.label(notation) + (s == 0 ? ' (original)' : ''),
-                              style: text.titleMedium,
-                            ),
-                            const SizedBox(height: 6),
-                            Wrap(
-                              spacing: 6,
-                              children: [
-                                for (final option in advice.options)
-                                  if (option == advice.recommended)
-                                    FilledButton(
-                                      onPressed: () => Navigator.pop(context, option),
-                                      child: Text(TransposeAdvice.label(option)),
-                                    )
-                                  else
-                                    OutlinedButton(
-                                      onPressed: advice.fits(option)
-                                          ? () => Navigator.pop(context, option)
-                                          : null,
-                                      child: Text(TransposeAdvice.label(option)),
-                                    ),
-                              ],
-                            ),
-                          ],
-                        ),
-                      );
-                    }(),
-                ],
-              ),
-            ],
+          child: SingleChildScrollView(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  '¿En qué tonalidad la quieren? Pon esos semitonos en el TRANSPOSE del piano '
+                  'y sigue tocando con las figuras de ${original.name(notation)}.',
+                  style: text.bodyMedium,
+                ),
+                const SizedBox(height: 16),
+                Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: [
+                    for (var s = 0; s < 12; s++)
+                      () {
+                        final target = original.transpose(s);
+                        final advice = TransposeAdvice.between(original, target, range: range);
+                        final selected = current % 12 == s;
+                        return Container(
+                          width: 196,
+                          padding: const EdgeInsets.all(10),
+                          decoration: BoxDecoration(
+                            color: selected ? scheme.tertiaryContainer : scheme.surfaceContainerHigh,
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Text(target.label(notation) + (s == 0 ? ' (original)' : ''), style: text.titleMedium),
+                              const SizedBox(height: 6),
+                              Wrap(
+                                spacing: 6,
+                                children: [
+                                  for (final option in advice.options)
+                                    if (option == advice.recommended)
+                                      FilledButton(
+                                        onPressed: () => Navigator.pop(context, option),
+                                        child: Text(TransposeAdvice.label(option)),
+                                      )
+                                    else
+                                      OutlinedButton(
+                                        onPressed: advice.fits(option) ? () => Navigator.pop(context, option) : null,
+                                        child: Text(TransposeAdvice.label(option)),
+                                      ),
+                                ],
+                              ),
+                            ],
+                          ),
+                        );
+                      }(),
+                  ],
+                ),
+              ],
+            ),
           ),
         ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
-        ],
+        actions: [TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar'))],
       );
     },
   );
@@ -627,35 +615,34 @@ Future<(MusicKey?,)?> pickKey(BuildContext context, {required MusicKey? current,
       title: const Text('Tonalidad de la canción'),
       content: SizedBox(
         width: 560,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            for (final mode in Mode.values) ...[
-              Text(mode == Mode.major ? 'Mayores' : 'Menores'),
-              const SizedBox(height: 8),
-              Wrap(
-                spacing: 6,
-                runSpacing: 6,
-                children: [
-                  for (var tonic = 0; tonic < 12; tonic++)
-                    ChoiceChip(
-                      label: Text(MusicKey(tonic, mode).name(notation)),
-                      selected: current == MusicKey(tonic, mode),
-                      onSelected: (_) => Navigator.pop(context, (MusicKey(tonic, mode),)),
-                    ),
-                ],
-              ),
-              const SizedBox(height: 16),
+        child: SingleChildScrollView(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              for (final mode in Mode.values) ...[
+                Text(mode == Mode.major ? 'Mayores' : 'Menores'),
+                const SizedBox(height: 8),
+                Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (var tonic = 0; tonic < 12; tonic++)
+                      ChoiceChip(
+                        label: Text(MusicKey(tonic, mode).name(notation)),
+                        selected: current == MusicKey(tonic, mode),
+                        onSelected: (_) => Navigator.pop(context, (MusicKey(tonic, mode),)),
+                      ),
+                  ],
+                ),
+                const SizedBox(height: 16),
+              ],
             ],
-          ],
+          ),
         ),
       ),
       actions: [
-        TextButton(
-          onPressed: () => Navigator.pop(context, (null,)),
-          child: const Text('Usar la detectada'),
-        ),
+        TextButton(onPressed: () => Navigator.pop(context, (null,)), child: const Text('Usar la detectada')),
         TextButton(onPressed: () => Navigator.pop(context), child: const Text('Cancelar')),
       ],
     ),

@@ -8,7 +8,9 @@ import '../storage/song_repository.dart';
 import 'play_page.dart';
 import 'song_editor.dart';
 import '../widgets/chord_cell.dart';
+import '../widgets/responsive.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/key_panel.dart' show showPanelSheet;
 import '../widgets/repeat_badge.dart';
 import '../widgets/settings_sheet.dart';
 import '../widgets/song_key_panel.dart';
@@ -273,6 +275,7 @@ class _SongPageState extends State<SongPage> {
       );
     }
     final linear = view == SongView.linear;
+    if (context.isCompact) return _compact(linear);
     return ListenableBuilder(
       listenable: settings,
       builder: (context, _) => Scaffold(
@@ -382,6 +385,138 @@ class _SongPageState extends State<SongPage> {
           ),
         ),
       ),
+    );
+  }
+
+  /// Teléfono: acciones en un menú y la tonalidad en una franja arriba.
+  Widget _compact(bool linear) {
+    return ListenableBuilder(
+      listenable: settings,
+      builder: (context, _) {
+        final text = Theme.of(context).textTheme;
+        final scheme = Theme.of(context).colorScheme;
+        final key = song.key;
+        return Scaffold(
+          appBar: AppBar(
+            title: InkWell(onTap: _rename, child: Text(song.title, overflow: TextOverflow.ellipsis)),
+            actions: [
+              IconButton.filled(
+                tooltip: 'Tocar',
+                onPressed: song.chords.isEmpty ? null : () => _play(),
+                icon: const Icon(Icons.play_arrow),
+              ),
+              IconButton(tooltip: 'Editar', onPressed: _edit, icon: const Icon(Icons.edit_note)),
+              PopupMenuButton<String>(
+                onSelected: (v) => switch (v) {
+                  'view' => setState(() => view = linear ? SongView.sections : SongView.linear),
+                  'sounding' => () {
+                      song.showOriginal = !song.showOriginal;
+                      _save();
+                    }(),
+                  'transpose' => _transpose(),
+                  'key' => _changeKey(),
+                  'settings' => showSettings(context, settings),
+                  'parts' => _redetectParts(),
+                  'modulations' => _redetectModulations(),
+                  'delete' => _delete(),
+                  _ => null,
+                },
+                itemBuilder: (_) => [
+                  PopupMenuItem(value: 'view', child: Text(linear ? 'Ver por secciones' : 'Ver en lineal')),
+                  if (song.transpose != 0 && key != null)
+                    PopupMenuItem(
+                      value: 'sounding',
+                      child: Text(sounding
+                          ? 'Ver figuras originales (${key.name(settings.notation)})'
+                          : 'Ver lo que suena (${song.soundingKey!.name(settings.notation)})'),
+                    ),
+                  if (key != null) const PopupMenuItem(value: 'transpose', child: Text('Transportar…')),
+                  const PopupMenuItem(value: 'key', child: Text('Cambiar tonalidad')),
+                  const PopupMenuItem(value: 'settings', child: Text('Configuración')),
+                  const PopupMenuDivider(),
+                  const PopupMenuItem(value: 'parts', child: Text('Volver a detectar partes')),
+                  const PopupMenuItem(value: 'modulations', child: Text('Volver a detectar modulaciones')),
+                  const PopupMenuItem(value: 'delete', child: Text('Eliminar canción')),
+                ],
+              ),
+            ],
+          ),
+          body: Padding(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                Card(
+                  margin: EdgeInsets.zero,
+                  child: InkWell(
+                    borderRadius: BorderRadius.circular(12),
+                    onTap: () => showPanelSheet(
+                      context,
+                      (sheet) {
+                        // Cada acción cierra la hoja para que se vea el cambio.
+                        void then(VoidCallback action) {
+                          Navigator.pop(sheet);
+                          action();
+                        }
+
+                        return SongKeyPanel(
+                          song: song,
+                          notation: settings.notation,
+                          onChangeKey: () => then(_changeKey),
+                          onRemoveModulation: (r) => then(() => _removeModulation(r)),
+                          onTranspose: () => then(_transpose),
+                        );
+                      },
+                    ),
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                      child: Row(
+                        children: [
+                          Flexible(
+                            child: Text.rich(
+                              TextSpan(
+                                text: key?.label(settings.notation) ?? 'Tonalidad sin determinar',
+                                style: text.titleMedium?.copyWith(fontWeight: FontWeight.w700),
+                                children: [
+                                  if (key != null && song.transpose != 0)
+                                    TextSpan(
+                                      text: '  →  ${song.soundingKey!.name(settings.notation)} '
+                                          '(${TransposeAdvice.label(song.transpose)})',
+                                      style: TextStyle(color: scheme.tertiary),
+                                    ),
+                                ],
+                              ),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          if (song.keyRegions.length > 1)
+                            Text('${song.keyRegions.length - 1} mod.', style: TextStyle(color: scheme.tertiary)),
+                          const Spacer(),
+                          const Icon(Icons.expand_less),
+                        ],
+                      ),
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: song.chords.isEmpty
+                      ? Center(
+                          child: FilledButton.icon(
+                            onPressed: _edit,
+                            icon: const Icon(Icons.edit_note),
+                            label: const Text('Sin acordes: abrir el editor'),
+                          ),
+                        )
+                      : linear
+                          ? _linear()
+                          : _bySections(),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
     );
   }
 
@@ -538,7 +673,7 @@ class _SongPageState extends State<SongPage> {
                       borderRadius: BorderRadius.circular(12),
                       onTap: () => _removeModulation(region),
                       child: Container(
-                        height: 84,
+                        height: ChordCell.heightOf(context),
                         padding: const EdgeInsets.symmetric(horizontal: 10),
                         decoration: BoxDecoration(
                           border: Border.all(color: scheme.tertiary),
@@ -579,7 +714,7 @@ class _SongPageState extends State<SongPage> {
     final scheme = Theme.of(context).colorScheme;
     // Row (no alignment) para que el marcador mida lo que su texto.
     return SizedBox(
-      height: 84,
+      height: ChordCell.heightOf(context),
       child: Row(
         mainAxisSize: MainAxisSize.min,
         children: [

@@ -7,6 +7,7 @@ import '../midi/midi_service.dart';
 import '../settings.dart';
 import '../storage/song_repository.dart';
 import '../voice/singer_engine.dart';
+import '../widgets/responsive.dart';
 import 'live_page.dart';
 import 'play_page.dart';
 import 'singer_page.dart';
@@ -71,8 +72,55 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  static const _tabs = [
+    (Icons.piano, 'En vivo'),
+    (Icons.library_music, 'Canciones'),
+    (Icons.mic, 'Cantante'),
+    (Icons.donut_large, 'Herramientas'),
+  ];
+
   @override
   Widget build(BuildContext context) {
+    final pages = IndexedStack(
+      index: index,
+      children: [
+        LivePage(
+          midi: widget.midi,
+          keyboard: widget.keyboard,
+          engine: widget.engine,
+          settings: widget.settings,
+          repo: widget.repo,
+          onOpenSong: openSong,
+        ),
+        SongListPage(
+          repo: widget.repo,
+          settings: widget.settings,
+          onOpen: openSong,
+          onCreate: (song) => openSong(song, edit: true),
+        ),
+        SingerPage(engine: singer, repo: widget.repo, settings: widget.settings),
+        ToolsPage(midi: widget.midi, settings: widget.settings),
+      ],
+    );
+    // En el teléfono las pestañas van abajo; en la tablet, al costado.
+    if (context.isCompact) {
+      return Scaffold(
+        body: pages,
+        bottomNavigationBar: ListenableBuilder(
+          listenable: widget.engine,
+          builder: (context, _) => NavigationBar(
+            height: 64,
+            selectedIndex: index,
+            labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
+            // No se cambia de pantalla a mitad de una grabación.
+            onDestinationSelected: widget.engine.recording ? null : _select,
+            destinations: [
+              for (final (icon, label) in _tabs) NavigationDestination(icon: Icon(icon), label: label),
+            ],
+          ),
+        ),
+      );
+    }
     return Scaffold(
       body: Row(
         children: [
@@ -83,38 +131,13 @@ class _HomePageState extends State<HomePage> {
               labelType: NavigationRailLabelType.all,
               // No se cambia de pantalla a mitad de una grabación.
               onDestinationSelected: widget.engine.recording ? null : _select,
-              destinations: const [
-                NavigationRailDestination(icon: Icon(Icons.piano), label: Text('En vivo')),
-                NavigationRailDestination(icon: Icon(Icons.library_music), label: Text('Canciones')),
-                NavigationRailDestination(icon: Icon(Icons.mic), label: Text('Cantante')),
-                NavigationRailDestination(icon: Icon(Icons.donut_large), label: Text('Herramientas')),
+              destinations: [
+                for (final (icon, label) in _tabs) NavigationRailDestination(icon: Icon(icon), label: Text(label)),
               ],
             ),
           ),
           const VerticalDivider(width: 1),
-          Expanded(
-            child: IndexedStack(
-              index: index,
-              children: [
-                LivePage(
-                  midi: widget.midi,
-                  keyboard: widget.keyboard,
-                  engine: widget.engine,
-                  settings: widget.settings,
-                  repo: widget.repo,
-                  onOpenSong: openSong,
-                ),
-                SongListPage(
-                  repo: widget.repo,
-                  settings: widget.settings,
-                  onOpen: openSong,
-                  onCreate: (song) => openSong(song, edit: true),
-                ),
-                SingerPage(engine: singer, repo: widget.repo, settings: widget.settings),
-                ToolsPage(midi: widget.midi, settings: widget.settings),
-              ],
-            ),
-          ),
+          Expanded(child: pages),
         ],
       ),
     );

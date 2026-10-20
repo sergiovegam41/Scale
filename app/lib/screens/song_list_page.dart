@@ -5,6 +5,7 @@ import '../settings.dart';
 import '../storage/song_repository.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/repeat_badge.dart';
+import '../widgets/responsive.dart';
 import '../widgets/settings_sheet.dart';
 import 'import_page.dart';
 
@@ -81,6 +82,9 @@ class _SongListPageState extends State<SongListPage> {
   /// Ver el archivo (todas las canciones) en vez de la lista para tocar.
   bool archive = false;
   String query = '';
+
+  /// En el teléfono la búsqueda ocupa la barra mientras está abierta.
+  bool searching = false;
   final TextEditingController _search = TextEditingController();
 
   SongRepository get repo => widget.repo;
@@ -182,7 +186,7 @@ class _SongListPageState extends State<SongListPage> {
         final songs = q.isEmpty ? all : all.where((s) => SongListPage.fold(s.title).contains(q)).toList();
         final sort = archive ? settings.archiveSort : settings.songSort;
         return Scaffold(
-          appBar: AppBar(
+          appBar: context.isCompact ? _compactBar(live, sort) : AppBar(
             title: reorganizing
                 ? Text('Para tocar (${live.length})')
                 : SegmentedButton<bool>(
@@ -300,7 +304,7 @@ class _SongListPageState extends State<SongListPage> {
                       : songs.isEmpty
                           ? Center(child: Text('Ninguna canción coincide con "$query"', style: text.titleMedium))
                           : GridView.builder(
-                              padding: const EdgeInsets.all(16),
+                              padding: EdgeInsets.all(context.isCompact ? 12 : 16),
                               gridDelegate: const SliverGridDelegateWithMaxCrossAxisExtent(
                                 maxCrossAxisExtent: 380,
                                 mainAxisExtent: 150,
@@ -324,6 +328,75 @@ class _SongListPageState extends State<SongListPage> {
                             ),
         );
       },
+    );
+  }
+
+  /// Barra del teléfono: lo principal a la vista y el resto en un menú.
+  PreferredSizeWidget _compactBar(List<Song> live, SongSort sort) {
+    if (reorganizing) {
+      return AppBar(
+        title: const Text('Arrastra para ordenar'),
+        actions: [IconButton(tooltip: 'Listo', onPressed: _toggleReorganize, icon: const Icon(Icons.check))],
+      );
+    }
+    if (searching) {
+      return AppBar(
+        leading: IconButton(
+          tooltip: 'Cerrar búsqueda',
+          onPressed: () => setState(() {
+            searching = false;
+            _search.clear();
+            query = '';
+          }),
+          icon: const Icon(Icons.arrow_back),
+        ),
+        title: TextField(
+          controller: _search,
+          autofocus: true,
+          onChanged: (v) => setState(() => query = v),
+          decoration: const InputDecoration(hintText: 'Buscar canción', border: InputBorder.none),
+        ),
+      );
+    }
+    return AppBar(
+      titleSpacing: 12,
+      title: SegmentedButton<bool>(
+        showSelectedIcon: false,
+        segments: [
+          ButtonSegment(value: false, label: Text('Tocar ${live.length}')),
+          ButtonSegment(value: true, label: Text('Archivo ${repo.songs.length}')),
+        ],
+        selected: {archive},
+        onSelectionChanged: (s) => setState(() => archive = s.first),
+      ),
+      actions: [
+        IconButton(tooltip: 'Buscar', onPressed: () => setState(() => searching = true), icon: const Icon(Icons.search)),
+        PopupMenuButton<SongSort>(
+          tooltip: 'Ordenar',
+          icon: const Icon(Icons.sort),
+          initialValue: sort,
+          onSelected: (s) => archive ? settings.archiveSort = s : settings.songSort = s,
+          itemBuilder: (_) => [
+            for (final s in SongSort.values)
+              if (!archive || s != SongSort.manual)
+                CheckedPopupMenuItem(value: s, checked: s == sort, child: Text(s.label)),
+          ],
+        ),
+        PopupMenuButton<String>(
+          onSelected: (v) => switch (v) {
+            'reorganize' => _toggleReorganize(),
+            'new' => _create(),
+            'import' => _import(),
+            _ => showSettings(context, settings),
+          },
+          itemBuilder: (_) => [
+            if (!archive) PopupMenuItem(value: 'reorganize', enabled: live.length > 1, child: const Text('Reorganizar')),
+            const PopupMenuItem(value: 'new', child: Text('Canción nueva')),
+            const PopupMenuItem(value: 'import', child: Text('Importar con IA')),
+            const PopupMenuItem(value: 'settings', child: Text('Configuración')),
+          ],
+        ),
+      ],
     );
   }
 

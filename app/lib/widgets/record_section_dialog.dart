@@ -218,7 +218,7 @@ class _RecordDialogState extends State<_RecordDialog> {
                     ],
                     if (captured.isEmpty)
                       Container(
-                        height: 84,
+                        height: ChordCell.heightOf(context),
                         alignment: Alignment.centerLeft,
                         child: Text('Esperando el primer acorde…', style: text.titleMedium?.copyWith(color: scheme.onSurfaceVariant)),
                       ),
@@ -228,10 +228,12 @@ class _RecordDialogState extends State<_RecordDialog> {
             ),
             if (repeats > 1) ...[
               const SizedBox(height: 16),
-              Row(
+              Wrap(
+                spacing: 8,
+                runSpacing: 4,
+                crossAxisAlignment: WrapCrossAlignment.center,
                 children: [
                   Switch(value: groupRepeats, onChanged: (v) => setState(() => groupRepeats = v)),
-                  const SizedBox(width: 8),
                   Text('Tocaste $repeats vueltas iguales: guardar ', style: text.bodyLarge),
                   Text(
                     captured.take(period).map((c) => _name(c.chord)).join(' '),

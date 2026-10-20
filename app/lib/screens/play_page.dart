@@ -9,6 +9,7 @@ import '../settings.dart';
 import '../storage/song_repository.dart';
 import '../widgets/chord_cell.dart';
 import '../widgets/repeat_badge.dart';
+import '../widgets/responsive.dart';
 import '../widgets/settings_sheet.dart';
 import 'song_list_page.dart';
 import 'song_page.dart' show SongOpener;
@@ -101,9 +102,9 @@ class _PlayPageState extends State<PlayPage> {
   }
 
   int? get _current => switch (mode) {
-        PlayMode.original => player.chordIndex,
-        PlayMode.live => live.follower.position < 0 ? null : live.follower.position,
-      };
+    PlayMode.original => player.chordIndex,
+    PlayMode.live => live.follower.position < 0 ? null : live.follower.position,
+  };
 
   int? get _next {
     if (mode == PlayMode.live) return live.follower.next;
@@ -178,6 +179,7 @@ class _PlayPageState extends State<PlayPage> {
       builder: (context, _) {
         final current = _current;
         _scrollToCurrent(current);
+        if (context.isCompact) return _compact(current);
         return Scaffold(
           appBar: AppBar(
             title: Text(song.title, overflow: TextOverflow.ellipsis),
@@ -264,11 +266,8 @@ class _PlayPageState extends State<PlayPage> {
               icon: const Icon(Icons.remove),
             ),
             Text(
-              'Transpose ${TransposeAdvice.label(t)}',
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: t == 0 ? scheme.onSurface : scheme.tertiary,
-              ),
+              context.isCompact ? 'T ${TransposeAdvice.label(t)}' : 'Transpose ${TransposeAdvice.label(t)}',
+              style: TextStyle(fontWeight: FontWeight.w600, color: t == 0 ? scheme.onSurface : scheme.tertiary),
             ),
             IconButton(
               visualDensity: VisualDensity.compact,
@@ -281,52 +280,199 @@ class _PlayPageState extends State<PlayPage> {
     );
   }
 
-  Widget _nowNext(int? current, int? next) {
+  /// Teléfono: Ahora y Sigue arriba, el estado en una línea y el resto en el menú.
+  Widget _compact(int? current) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    final f = live.follower;
+    final played = f.lastPlayed;
+    final (label, color) = mode == PlayMode.original
+        ? (player.playing ? 'Reproduciendo la toma' : 'Toma original', scheme.onSurfaceVariant)
+        : switch (f.status) {
+            FollowStatus.waiting => ('Toca el primer acorde', scheme.onSurfaceVariant),
+            FollowStatus.onTrack => ('En curso', Colors.greenAccent),
+            FollowStatus.jumped => ('Saltaste a ${_whereLabel(f.position)}', scheme.tertiary),
+            FollowStatus.offScript => ('Esperando el acorde que sigue', Colors.amberAccent),
+            FollowStatus.finished => ('¡Fin de la canción!', Colors.greenAccent),
+          };
+    final short = context.screen.height < 500;
+    return Scaffold(
+      appBar: AppBar(
+        titleSpacing: 0,
+        title: Text(song.title, overflow: TextOverflow.ellipsis),
+        actions: [
+          SegmentedButton<PlayMode>(
+            showSelectedIcon: false,
+            segments: [
+              ButtonSegment(
+                value: PlayMode.original,
+                enabled: player.canPlay,
+                icon: const Icon(Icons.play_circle_outline),
+                tooltip: 'Reproducir la toma original',
+              ),
+              const ButtonSegment(value: PlayMode.live, icon: Icon(Icons.piano), tooltip: 'Tocar en vivo'),
+            ],
+            selected: {mode},
+            onSelectionChanged: (s) => _setMode(s.first),
+          ),
+          IconButton(
+            tooltip: 'Editar',
+            onPressed: () => Navigator.of(context).pop('edit:${_current ?? -1}'),
+            icon: const Icon(Icons.edit_note),
+          ),
+          PopupMenuButton<String>(
+            onSelected: (v) => switch (v) {
+              'piano' => setState(() {
+                player.pause();
+                player.soundOnPiano = !player.soundOnPiano;
+              }),
+              'sounding' => _setSounding(!sounding),
+              'restart' => live.restart(),
+              _ => showSettings(context, settings),
+            },
+            itemBuilder: (_) => [
+              if (mode == PlayMode.original)
+                CheckedPopupMenuItem(
+                  value: 'piano',
+                  checked: player.soundOnPiano,
+                  child: const Text('Sonar en el piano'),
+                ),
+              if (mode == PlayMode.live) const PopupMenuItem(value: 'restart', child: Text('Desde el inicio')),
+              if (song.transpose != 0 && song.key != null)
+                PopupMenuItem(
+                  value: 'sounding',
+                  child: Text(
+                    sounding
+                        ? 'Ver figuras originales (${song.key!.name(settings.notation)})'
+                        : 'Ver lo que suena (${song.soundingKey!.name(settings.notation)})',
+                  ),
+                ),
+              const PopupMenuItem(value: 'settings', child: Text('Configuración')),
+            ],
+          ),
+        ],
+      ),
+      body: Padding(
+        padding: const EdgeInsets.fromLTRB(10, 0, 10, 8),
+        child: Column(
+          children: [
+            // Acostado no hay alto: el estado va al lado de Ahora y Sigue.
+            if (short)
+              SizedBox(
+                height: 96,
+                child: Row(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    Expanded(child: _nowNext(current, _next, compact: true)),
+                    const SizedBox(width: 8),
+                    SizedBox(
+                      width: 200,
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            widget.midi.connected == null ? 'Piano desconectado' : label,
+                            maxLines: 2,
+                            textAlign: TextAlign.end,
+                            overflow: TextOverflow.ellipsis,
+                            style: text.bodySmall?.copyWith(
+                              color: widget.midi.connected == null ? scheme.error : color,
+                            ),
+                          ),
+                          const SizedBox(height: 4),
+                          _transposeStepper(),
+                        ],
+                      ),
+                    ),
+                  ],
+                ),
+              )
+            else ...[
+              SizedBox(height: 132, child: _nowNext(current, _next, compact: true)),
+              Row(
+                children: [
+                  Icon(
+                    widget.midi.connected == null ? Icons.usb_off : Icons.circle,
+                    size: 12,
+                    color: widget.midi.connected == null ? scheme.error : color,
+                  ),
+                  const SizedBox(width: 6),
+                  Expanded(
+                    child: Text(
+                      widget.midi.connected == null
+                          ? 'Piano desconectado'
+                          : played != null && mode == PlayMode.live
+                          ? '$label · tocaste ${settings.formatter.format(played.transpose(_shown))}'
+                          : label,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: text.bodyMedium?.copyWith(color: widget.midi.connected == null ? scheme.error : color),
+                    ),
+                  ),
+                  _transposeStepper(),
+                ],
+              ),
+            ],
+            const SizedBox(height: 4),
+            Expanded(child: _chart(current, _next)),
+            if (mode == PlayMode.original) _transport(),
+            _setlist(),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _nowNext(int? current, int? next, {bool compact = false}) {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
 
     Widget card(String title, int? index, {required bool main, String? note}) => Card(
-          color: main ? scheme.primaryContainer : null,
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Text(title, style: text.titleMedium),
-                if (note != null)
-                  Text(
-                    '📝 $note',
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                    style: text.titleMedium?.copyWith(
-                      color: main ? scheme.onPrimaryContainer : scheme.tertiary,
-                      fontWeight: FontWeight.w600,
-                    ),
-                  ),
-                Expanded(
-                  child: Center(
-                    child: FittedBox(
-                      child: Text(
-                        index == null ? '—' : _chordText(index),
-                        style: TextStyle(
-                          fontSize: main ? 96 : 64,
-                          fontWeight: FontWeight.w700,
-                          color: main ? scheme.onPrimaryContainer : repeatColor,
-                        ),
-                      ),
+      margin: compact ? const EdgeInsets.all(2) : null,
+      color: main ? scheme.primaryContainer : null,
+      child: Padding(
+        padding: EdgeInsets.all(compact ? 10 : 16),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(title, style: compact ? text.labelMedium : text.titleMedium),
+            if (note != null)
+              Text(
+                '📝 $note',
+                maxLines: compact ? 1 : 2,
+                overflow: TextOverflow.ellipsis,
+                style: (compact ? text.labelMedium : text.titleMedium)?.copyWith(
+                  color: main ? scheme.onPrimaryContainer : scheme.tertiary,
+                  fontWeight: FontWeight.w600,
+                ),
+              ),
+            Expanded(
+              child: Center(
+                child: FittedBox(
+                  child: Text(
+                    index == null ? '—' : _chordText(index),
+                    style: TextStyle(
+                      fontSize: main ? 96 : 64,
+                      fontWeight: FontWeight.w700,
+                      color: main ? scheme.onPrimaryContainer : repeatColor,
                     ),
                   ),
                 ),
-                Text(
-                  index == null ? '' : _whereLabel(index),
-                  style: text.titleMedium?.copyWith(
-                    color: main ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
-                  ),
-                ),
-              ],
+              ),
             ),
-          ),
-        );
+            Text(
+              index == null ? '' : _whereLabel(index),
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: (compact ? text.labelSmall : text.titleMedium)?.copyWith(
+                color: main ? scheme.onPrimaryContainer : scheme.onSurfaceVariant,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
 
     // La nota de la sección actual se ve en "Ahora"; la de la siguiente
     // sección se anticipa en "Sigue" cuando el próximo acorde ya es de otra.
@@ -340,10 +486,15 @@ class _PlayPageState extends State<PlayPage> {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
         Expanded(flex: 3, child: card('Ahora', current, main: true, note: current == null ? null : currentNote)),
-        const SizedBox(width: 12),
-        Expanded(flex: 2, child: card('Sigue', next, main: false, note: nextNote ?? (current == null ? currentNote : null))),
-        const SizedBox(width: 12),
-        SizedBox(width: 300, child: mode == PlayMode.live ? _liveStatus() : _playbackInfo()),
+        SizedBox(width: compact ? 4 : 12),
+        Expanded(
+          flex: 2,
+          child: card('Sigue', next, main: false, note: nextNote ?? (current == null ? currentNote : null)),
+        ),
+        if (!compact) ...[
+          const SizedBox(width: 12),
+          SizedBox(width: 300, child: mode == PlayMode.live ? _liveStatus() : _playbackInfo()),
+        ],
       ],
     );
   }
@@ -427,6 +578,36 @@ class _PlayPageState extends State<PlayPage> {
     if (widget.onOpenSong == null || index < 0) return const SizedBox.shrink();
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
+    if (context.isCompact) {
+      return Row(
+        children: [
+          IconButton(
+            tooltip: previous == null ? null : 'Anterior: ${previous.title}',
+            onPressed: previous == null ? null : () => _goTo(previous),
+            icon: const Icon(Icons.skip_previous),
+          ),
+          Text('${index + 1} de $total', style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+          const SizedBox(width: 8),
+          Expanded(
+            child: next == null
+                ? Text(
+                    'Última de la lista',
+                    textAlign: TextAlign.end,
+                    style: TextStyle(color: scheme.onSurfaceVariant),
+                  )
+                : Align(
+                    alignment: Alignment.centerRight,
+                    child: FilledButton.tonalIcon(
+                      onPressed: () => _goTo(next),
+                      iconAlignment: IconAlignment.end,
+                      icon: const Icon(Icons.skip_next),
+                      label: Text(next.title, overflow: TextOverflow.ellipsis),
+                    ),
+                  ),
+          ),
+        ],
+      );
+    }
     return Padding(
       padding: const EdgeInsets.only(top: 8),
       child: Row(
@@ -443,10 +624,7 @@ class _PlayPageState extends State<PlayPage> {
                     ),
                   ),
           ),
-          Text(
-            'Canción ${index + 1} de $total',
-            style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-          ),
+          Text('Canción ${index + 1} de $total', style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
           Expanded(
             child: next == null
                 ? Align(
@@ -575,10 +753,7 @@ class _PlayPageState extends State<PlayPage> {
                       song.section(o.sectionId)?.label ?? '',
                       style: text.titleMedium?.copyWith(color: scheme.primary),
                     ),
-                    if (o.repeats > 1) ...[
-                      const SizedBox(width: 8),
-                      RepeatBadge(o.repeats, fontSize: 14),
-                    ],
+                    if (o.repeats > 1) ...[const SizedBox(width: 8), RepeatBadge(o.repeats, fontSize: 14)],
                     if (_noteAt(o.start) case final note?) ...[
                       const SizedBox(width: 12),
                       Flexible(

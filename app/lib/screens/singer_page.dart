@@ -7,6 +7,7 @@ import '../storage/song_repository.dart';
 import '../voice/singer_engine.dart';
 import '../widgets/key_panel.dart';
 import '../widgets/pitch_graph.dart';
+import '../widgets/responsive.dart';
 import '../widgets/settings_sheet.dart';
 
 /// Tonalidad del cantante: lo escucha por el micrófono, estima en qué
@@ -37,44 +38,131 @@ class _SingerPageState extends State<SingerPage> {
       listenable: Listenable.merge([engine, settings, widget.repo]),
       builder: (context, _) => Scaffold(
         body: SafeArea(
-          child: Column(
-            children: [
-              _topBar(),
-              Expanded(
-                child: Padding(
-                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
-                  child: Row(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: [
-                      Expanded(child: _nowSinging()),
-                      const SizedBox(width: 16),
-                      SizedBox(
-                        width: 360,
-                        child: Column(
+          child: context.isCompact
+              ? _compact()
+              : Column(
+                  children: [
+                    _topBar(),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                        child: Row(
                           crossAxisAlignment: CrossAxisAlignment.stretch,
                           children: [
-                            Expanded(
-                              child: KeyPanel(
-                                estimate: engine.key,
-                                notation: settings.notation,
-                                emptyMessage: 'Pídele que cante la canción (o una parte) y aquí verás su tonalidad.',
-                                unit: 'notas',
-                                showScale: true,
+                            Expanded(child: _nowSinging()),
+                            const SizedBox(width: 16),
+                            SizedBox(
+                              width: 360,
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.stretch,
+                                children: [
+                                  Expanded(
+                                    child: KeyPanel(
+                                      estimate: engine.key,
+                                      notation: settings.notation,
+                                      emptyMessage:
+                                          'Pídele que cante la canción (o una parte) y aquí verás su tonalidad.',
+                                      unit: 'notas',
+                                      showScale: true,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  _compare(),
+                                ],
                               ),
                             ),
-                            const SizedBox(height: 12),
-                            _compare(),
                           ],
                         ),
                       ),
-                    ],
-                  ),
+                    ),
+                  ],
                 ),
+        ),
+      ),
+    );
+  }
+
+  /// Teléfono: todo en una columna que se desplaza; el gráfico con alto fijo.
+  Widget _compact() {
+    const red = Color(0xFFE53935);
+    final scheme = Theme.of(context).colorScheme;
+    return Column(
+      children: [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
+          child: Row(
+            children: [
+              FilledButton.icon(
+                style: FilledButton.styleFrom(
+                  backgroundColor: engine.listening ? red : scheme.surfaceContainerHighest,
+                  foregroundColor: engine.listening ? Colors.white : scheme.onSurface,
+                ),
+                onPressed: engine.listening ? engine.stop : engine.start,
+                icon: Icon(engine.listening ? Icons.stop : Icons.mic, color: engine.listening ? Colors.white : red),
+                label: Text(engine.listening ? 'Detener' : 'Escuchar'),
+              ),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  engine.error ??
+                      (engine.device == null ? 'Micrófono de la tablet' : SingerEngine.deviceName(engine.device!)),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: engine.error != null ? scheme.error : scheme.onSurfaceVariant),
+                ),
+              ),
+              PopupMenuButton<Object>(
+                onOpened: engine.refreshDevices,
+                onSelected: (v) => switch (v) {
+                  InputDevice d => engine.selectDevice(d),
+                  'spectrogram' => setState(() => showSpectrogram = !showSpectrogram),
+                  'reset' => engine.reset(),
+                  _ => showSettings(context, settings),
+                },
+                itemBuilder: (_) => [
+                  for (final d in engine.devices)
+                    CheckedPopupMenuItem<Object>(
+                      value: d,
+                      checked: d.id == engine.device?.id,
+                      child: Text(SingerEngine.deviceName(d)),
+                    ),
+                  if (engine.devices.isNotEmpty) const PopupMenuDivider(),
+                  CheckedPopupMenuItem<Object>(
+                    value: 'spectrogram',
+                    checked: showSpectrogram,
+                    child: const Text('Espectrograma'),
+                  ),
+                  const PopupMenuItem<Object>(value: 'reset', child: Text('Empezar de nuevo')),
+                  const PopupMenuItem<Object>(value: 'settings', child: Text('Configuración')),
+                ],
               ),
             ],
           ),
         ),
-      ),
+        Expanded(
+          child: ListView(
+            padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+            children: [
+              SizedBox(height: (context.screen.height * 0.62).clamp(300, 520).toDouble(), child: _nowSinging()),
+              const SizedBox(height: 8),
+              KeySummary(
+                estimate: engine.key,
+                notation: settings.notation,
+                emptyMessage: 'Tonalidad: pídele que cante y aquí aparece',
+                panel: (_) => KeyPanel(
+                  estimate: engine.key,
+                  notation: settings.notation,
+                  emptyMessage: 'Pídele que cante la canción (o una parte) y aquí verás su tonalidad.',
+                  unit: 'notas',
+                  showScale: true,
+                ),
+              ),
+              const SizedBox(height: 8),
+              _compare(),
+            ],
+          ),
+        ),
+      ],
     );
   }
 
@@ -167,7 +255,7 @@ class _SingerPageState extends State<SingerPage> {
 
     return Card(
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 16, 20, 16),
+        padding: context.isCompact ? const EdgeInsets.all(12) : const EdgeInsets.fromLTRB(20, 16, 20, 16),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -175,7 +263,7 @@ class _SingerPageState extends State<SingerPage> {
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 SizedBox(
-                  width: 170,
+                  width: context.isCompact ? 104 : 170,
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
@@ -183,7 +271,10 @@ class _SingerPageState extends State<SingerPage> {
                       FittedBox(
                         child: Text(
                           nearest == null ? '—' : _note(nearest),
-                          style: text.displayLarge?.copyWith(fontSize: 72, fontWeight: FontWeight.w700),
+                          style: text.displayLarge?.copyWith(
+                            fontSize: context.isCompact ? 48 : 72,
+                            fontWeight: FontWeight.w700,
+                          ),
                         ),
                       ),
                     ],
@@ -196,7 +287,7 @@ class _SingerPageState extends State<SingerPage> {
                     children: [
                       // Afinación respecto de la nota más cercana (±50 ¢).
                       SizedBox(
-                        width: 240,
+                        width: context.isCompact ? 150 : 240,
                         height: 14,
                         child: Stack(
                           children: [
@@ -234,7 +325,7 @@ class _SingerPageState extends State<SingerPage> {
                     ],
                   ),
                 ),
-                if (key != null)
+                if (key != null && !context.isCompact)
                   Padding(
                     padding: const EdgeInsets.only(left: 12),
                     child: Column(

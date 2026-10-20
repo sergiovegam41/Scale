@@ -214,3 +214,78 @@ class _Row extends StatelessWidget {
     );
   }
 }
+
+/// La tonalidad en una franja (teléfono): se toca para ver el panel completo.
+class KeySummary extends StatelessWidget {
+  const KeySummary({
+    super.key,
+    required this.estimate,
+    required this.notation,
+    required this.panel,
+    this.emptyMessage = 'Tonalidad: toca acordes para detectarla',
+  });
+
+  final KeyEstimate estimate;
+  final Notation notation;
+
+  /// El panel completo que se abre al tocarla.
+  final WidgetBuilder panel;
+  final String emptyMessage;
+
+  @override
+  Widget build(BuildContext context) {
+    final text = Theme.of(context).textTheme;
+    final scheme = Theme.of(context).colorScheme;
+    return Card(
+      margin: EdgeInsets.zero,
+      child: InkWell(
+        borderRadius: BorderRadius.circular(12),
+        onTap: () => showPanelSheet(context, panel),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          child: estimate.isEmpty
+              ? Row(
+                  children: [
+                    Expanded(child: Text(emptyMessage, style: TextStyle(color: scheme.onSurfaceVariant))),
+                    const Icon(Icons.expand_less),
+                  ],
+                )
+              : Row(
+                  children: [
+                    Text(
+                      estimate.key.label(notation),
+                      style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
+                    ),
+                    const SizedBox(width: 10),
+                    Builder(builder: (context) {
+                      final (label, color) = KeyPanel.status(estimate.confidence, scheme);
+                      return Text(
+                        '$label · ${(estimate.confidence * 100).round()} %',
+                        style: text.labelLarge?.copyWith(color: color),
+                      );
+                    }),
+                    const Spacer(),
+                    Text(
+                      '≡ ${estimate.key.relative.name(notation)}',
+                      style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+                    ),
+                    const SizedBox(width: 6),
+                    const Icon(Icons.expand_less),
+                  ],
+                ),
+        ),
+      ),
+    );
+  }
+}
+
+/// Abre un panel (que usa todo su alto) como hoja desde abajo.
+Future<void> showPanelSheet(BuildContext context, WidgetBuilder panel) => showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      showDragHandle: true,
+      builder: (context) => SizedBox(
+        height: (MediaQuery.sizeOf(context).height * 0.8).clamp(320, 620).toDouble(),
+        child: Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), child: panel(context)),
+      ),
+    );

@@ -169,7 +169,7 @@ class FifthsWheel extends StatefulWidget {
 }
 
 class _FifthsWheelState extends State<FifthsWheel> with SingleTickerProviderStateMixin {
-  late final Ticker _ticker = createTicker(_tick);
+  late final Ticker _ticker;
   double _shown = 0;
   bool _dragging = false;
   double _dragStart = 0, _dragAcc = 0, _lastAngle = 0;
@@ -179,6 +179,7 @@ class _FifthsWheelState extends State<FifthsWheel> with SingleTickerProviderStat
   @override
   void initState() {
     super.initState();
+    _ticker = createTicker(_tick);
     _shown = c.angle;
     c.addListener(_onChange);
   }

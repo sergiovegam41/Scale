@@ -10,6 +10,7 @@ import '../storage/song_repository.dart';
 import '../widgets/chord_cell.dart';
 import '../widgets/dialogs.dart';
 import '../widgets/repeat_badge.dart';
+import '../widgets/responsive.dart';
 
 /// Importar una canción desde capturas, fotos o texto, refinándola en un chat
 /// con la IA. Al guardar, devuelve la canción con `Navigator.pop`.
@@ -109,26 +110,56 @@ class _ImportPageState extends State<ImportPage> {
   Widget build(BuildContext context) {
     return ListenableBuilder(
       listenable: Listenable.merge([session, settings]),
-      builder: (context, _) => Scaffold(
+      builder: (context, _) => context.isCompact
+          ? _compact()
+          : Scaffold(
+              appBar: AppBar(
+                title: const Text('Importar canción'),
+                actions: [
+                  FilledButton.icon(
+                    onPressed: session.hasSong && !session.busy ? _save : null,
+                    icon: const Icon(Icons.save_alt),
+                    label: const Text('Guardar canción'),
+                  ),
+                  const SizedBox(width: 12),
+                ],
+              ),
+              body: Row(
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Expanded(child: _preview()),
+                  const VerticalDivider(width: 1),
+                  SizedBox(width: 440, child: _chat()),
+                ],
+              ),
+            ),
+    );
+  }
+
+  /// Teléfono: la canción y el chat en dos pestañas.
+  Widget _compact() {
+    return DefaultTabController(
+      length: 2,
+      initialIndex: 1,
+      child: Scaffold(
         appBar: AppBar(
-          title: const Text('Importar canción'),
+          title: const Text('Importar'),
           actions: [
-            FilledButton.icon(
+            IconButton.filled(
+              tooltip: 'Guardar canción',
               onPressed: session.hasSong && !session.busy ? _save : null,
               icon: const Icon(Icons.save_alt),
-              label: const Text('Guardar canción'),
             ),
-            const SizedBox(width: 12),
+            const SizedBox(width: 8),
           ],
+          bottom: TabBar(
+            tabs: [
+              Tab(text: session.hasSong ? 'Canción ✓' : 'Canción'),
+              const Tab(text: 'Chat'),
+            ],
+          ),
         ),
-        body: Row(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: [
-            Expanded(child: _preview()),
-            const VerticalDivider(width: 1),
-            SizedBox(width: 440, child: _chat()),
-          ],
-        ),
+        body: TabBarView(children: [_preview(), _chat()]),
       ),
     );
   }
@@ -285,10 +316,7 @@ class _ImportPageState extends State<ImportPage> {
                 Container(
                   margin: const EdgeInsets.only(top: 8),
                   padding: const EdgeInsets.all(10),
-                  decoration: BoxDecoration(
-                    color: scheme.errorContainer,
-                    borderRadius: BorderRadius.circular(10),
-                  ),
+                  decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(10)),
                   child: Text(session.error!, style: TextStyle(color: scheme.onErrorContainer)),
                 ),
             ],
@@ -398,10 +426,7 @@ class _ImportPageState extends State<ImportPage> {
             if (e.text.isNotEmpty)
               Padding(
                 padding: EdgeInsets.only(top: e.images.isEmpty ? 0 : 6),
-                child: Text(
-                  e.text,
-                  style: TextStyle(color: e.fromUser ? scheme.onPrimaryContainer : scheme.onSurface),
-                ),
+                child: Text(e.text, style: TextStyle(color: e.fromUser ? scheme.onPrimaryContainer : scheme.onSurface)),
               ),
           ],
         ),
