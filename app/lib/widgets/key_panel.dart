@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:scale_core/scale_core.dart';
 
+import 'responsive.dart';
+
 /// Panel de tonalidad: la principal, su seguridad, equivalencias y alternativas.
 class KeyPanel extends StatelessWidget {
   const KeyPanel({
@@ -50,9 +52,7 @@ class KeyPanel extends StatelessWidget {
             children: [
               Text('Tonalidad', style: text.titleMedium),
               Expanded(
-                child: Center(
-                  child: Text(emptyMessage, textAlign: TextAlign.center),
-                ),
+                child: Center(child: Text(emptyMessage, textAlign: TextAlign.center)),
               ),
             ],
           ),
@@ -88,16 +88,10 @@ class KeyPanel extends StatelessWidget {
             ),
             const SizedBox(height: 12),
             FittedBox(
-              child: Text(
-                best.label(notation),
-                style: text.displaySmall?.copyWith(fontWeight: FontWeight.w700),
-              ),
+              child: Text(best.label(notation), style: text.displaySmall?.copyWith(fontWeight: FontWeight.w700)),
             ),
             if (enharmonic != null)
-              Text(
-                '≡ $enharmonic (enarmónica)',
-                style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-              ),
+              Text('≡ $enharmonic (enarmónica)', style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant)),
             if (layer != 0)
               Text(
                 'Suena en ${best.transpose(layer).label(notation)} (${TransposeAdvice.label(layer)})',
@@ -153,8 +147,7 @@ class KeyPanel extends StatelessWidget {
             const Divider(height: 24),
             Text('Alternativas', style: text.labelLarge),
             const SizedBox(height: 6),
-            for (final c in others)
-              _Row(title: c.key.label(notation), probability: c.probability),
+            for (final c in others) _Row(title: c.key.label(notation), probability: c.probability),
             const Spacer(),
             if (previousKey != null && previousKey != best)
               Row(
@@ -200,15 +193,11 @@ class _Row extends StatelessWidget {
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(title, style: text.titleMedium),
-                if (subtitle != null)
-                  Text(subtitle!, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
+                if (subtitle != null) Text(subtitle!, style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant)),
               ],
             ),
           ),
-          Text(
-            '${(probability * 100).round()} %',
-            style: text.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
-          ),
+          Text('${(probability * 100).round()} %', style: text.bodyLarge?.copyWith(color: scheme.onSurfaceVariant)),
         ],
       ),
     );
@@ -242,36 +231,54 @@ class KeySummary extends StatelessWidget {
         borderRadius: BorderRadius.circular(12),
         onTap: () => showPanelSheet(context, panel),
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 10),
+          padding: EdgeInsets.symmetric(horizontal: context.isShort ? 10 : 16, vertical: context.isShort ? 6 : 10),
           child: estimate.isEmpty
               ? Row(
                   children: [
-                    Expanded(child: Text(emptyMessage, style: TextStyle(color: scheme.onSurfaceVariant))),
+                    Expanded(
+                      child: Text(
+                        emptyMessage,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(color: scheme.onSurfaceVariant),
+                      ),
+                    ),
                     const Icon(Icons.expand_less),
                   ],
                 )
-              : Row(
-                  children: [
-                    Text(
-                      estimate.key.label(notation),
-                      style: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-                    ),
-                    const SizedBox(width: 10),
-                    Builder(builder: (context) {
-                      final (label, color) = KeyPanel.status(estimate.confidence, scheme);
-                      return Text(
-                        '$label · ${(estimate.confidence * 100).round()} %',
-                        style: text.labelLarge?.copyWith(color: color),
-                      );
-                    }),
-                    const Spacer(),
-                    Text(
-                      '≡ ${estimate.key.relative.name(notation)}',
-                      style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
-                    ),
-                    const SizedBox(width: 6),
-                    const Icon(Icons.expand_less),
-                  ],
+              : LayoutBuilder(
+                  // Angosta (en una fila con otras cosas): solo tonalidad y seguridad.
+                  builder: (context, box) {
+                    final narrow = box.maxWidth < 320;
+                    final (label, color) = KeyPanel.status(estimate.confidence, scheme);
+                    return Row(
+                      children: [
+                        Flexible(
+                          child: Text(
+                            narrow ? estimate.key.name(notation) : estimate.key.label(notation),
+                            overflow: TextOverflow.ellipsis,
+                            style: (narrow ? text.titleMedium : text.titleLarge)?.copyWith(fontWeight: FontWeight.w700),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Text(
+                          narrow
+                              ? '${(estimate.confidence * 100).round()} %'
+                              : '$label · ${(estimate.confidence * 100).round()} %',
+                          style: text.labelLarge?.copyWith(color: color),
+                        ),
+                        const Spacer(),
+                        if (!narrow) ...[
+                          Text(
+                            '≡ ${estimate.key.relative.name(notation)}',
+                            style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
+                          ),
+                          const SizedBox(width: 6),
+                        ],
+                        const Icon(Icons.expand_less),
+                      ],
+                    );
+                  },
                 ),
         ),
       ),
@@ -281,11 +288,11 @@ class KeySummary extends StatelessWidget {
 
 /// Abre un panel (que usa todo su alto) como hoja desde abajo.
 Future<void> showPanelSheet(BuildContext context, WidgetBuilder panel) => showModalBottomSheet<void>(
-      context: context,
-      isScrollControlled: true,
-      showDragHandle: true,
-      builder: (context) => SizedBox(
-        height: (MediaQuery.sizeOf(context).height * 0.8).clamp(320, 620).toDouble(),
-        child: Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), child: panel(context)),
-      ),
-    );
+  context: context,
+  isScrollControlled: true,
+  showDragHandle: true,
+  builder: (context) => SizedBox(
+    height: (MediaQuery.sizeOf(context).height * 0.8).clamp(320, 620).toDouble(),
+    child: Padding(padding: const EdgeInsets.fromLTRB(12, 0, 12, 12), child: panel(context)),
+  ),
+);

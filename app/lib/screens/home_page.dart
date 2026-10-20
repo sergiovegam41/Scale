@@ -103,7 +103,7 @@ class _HomePageState extends State<HomePage> {
       ],
     );
     // En el teléfono las pestañas van abajo; en la tablet, al costado.
-    if (context.isCompact) {
+    if (context.isCompact && !context.isShort) {
       return Scaffold(
         body: pages,
         bottomNavigationBar: ListenableBuilder(
@@ -114,26 +114,31 @@ class _HomePageState extends State<HomePage> {
             labelBehavior: NavigationDestinationLabelBehavior.onlyShowSelected,
             // No se cambia de pantalla a mitad de una grabación.
             onDestinationSelected: widget.engine.recording ? null : _select,
-            destinations: [
-              for (final (icon, label) in _tabs) NavigationDestination(icon: Icon(icon), label: label),
-            ],
+            destinations: [for (final (icon, label) in _tabs) NavigationDestination(icon: Icon(icon), label: label)],
           ),
         ),
       );
     }
+    final short = context.isShort;
     return Scaffold(
       body: Row(
         children: [
           ListenableBuilder(
             listenable: widget.engine,
-            builder: (context, _) => NavigationRail(
-              selectedIndex: index,
-              labelType: NavigationRailLabelType.all,
-              // No se cambia de pantalla a mitad de una grabación.
-              onDestinationSelected: widget.engine.recording ? null : _select,
-              destinations: [
-                for (final (icon, label) in _tabs) NavigationRailDestination(icon: Icon(icon), label: Text(label)),
-              ],
+            // En el teléfono acostado la cámara puede quedar a este lado.
+            builder: (context, _) => SafeArea(
+              right: false,
+              child: NavigationRail(
+                selectedIndex: index,
+                minWidth: short ? 56 : 72,
+                groupAlignment: short ? 0 : -1,
+                labelType: short ? NavigationRailLabelType.none : NavigationRailLabelType.all,
+                // No se cambia de pantalla a mitad de una grabación.
+                onDestinationSelected: widget.engine.recording ? null : _select,
+                destinations: [
+                  for (final (icon, label) in _tabs) NavigationRailDestination(icon: Icon(icon), label: Text(label)),
+                ],
+              ),
             ),
           ),
           const VerticalDivider(width: 1),

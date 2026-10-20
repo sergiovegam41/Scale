@@ -128,7 +128,59 @@ class LivePage extends StatelessWidget {
 extension on LivePage {
   /// Teléfono: todo apilado; la tonalidad en una franja que abre su panel.
   Widget _compact(BuildContext context) {
-    final short = context.screen.height < 500;
+    final short = context.isShort;
+    final keySummary = KeySummary(
+      estimate: engine.key,
+      notation: settings.notation,
+      emptyMessage: 'Tonalidad: toca acordes',
+      panel: (_) => KeyPanel(
+        estimate: engine.key,
+        notation: settings.notation,
+        previousKey: engine.previousKey,
+        layer: engine.layer,
+      ),
+    );
+    if (short) {
+      return Column(
+        children: [
+          _TopBar(
+            midi: midi,
+            engine: engine,
+            settings: settings,
+            compact: true,
+            keySummary: keySummary,
+            onRecord: () => _toggleRecording(context),
+            onClear: engine.reset,
+            onDiagnostics: () => Navigator.of(context).push(
+              MaterialPageRoute(
+                builder: (_) => MidiTestPage(midi: midi, keyboard: keyboard, settings: settings),
+              ),
+            ),
+          ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(8, 0, 8, 8),
+              child: Stack(
+                children: [
+                  Positioned.fill(
+                    child: _CurrentChord(engine: engine, settings: settings),
+                  ),
+                  if (engine.chords.isNotEmpty)
+                    Positioned(
+                      right: 12,
+                      bottom: 12,
+                      child: ConstrainedBox(
+                        constraints: BoxConstraints(maxWidth: context.screen.width * 0.5),
+                        child: _Sequence(engine: engine, settings: settings, dense: true),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
     return Column(
       children: [
         _TopBar(
@@ -188,7 +240,11 @@ class _TopBar extends StatelessWidget {
     required this.onClear,
     required this.onDiagnostics,
     this.compact = false,
+    this.keySummary,
   });
+
+  /// Teléfono acostado: la tonalidad va en la misma fila.
+  final Widget? keySummary;
 
   final MidiService midi;
   final ChordEngine engine;
@@ -213,6 +269,43 @@ class _TopBar extends StatelessWidget {
         settings.liveLayer = engine.layer;
       },
     );
+    final record = FilledButton.icon(
+      style: FilledButton.styleFrom(
+        backgroundColor: recording ? red : scheme.surfaceContainerHighest,
+        foregroundColor: recording ? Colors.white : scheme.onSurface,
+      ),
+      onPressed: onRecord,
+      icon: Icon(recording ? Icons.stop : Icons.fiber_manual_record, color: recording ? Colors.white : red),
+      label: Text(recording ? 'Detener  $clock' : 'Grabar'),
+    );
+    final menu = PopupMenuButton<String>(
+      onSelected: (v) => switch (v) {
+        'clear' => onClear(),
+        'diag' => onDiagnostics(),
+        _ => showSettings(context, settings),
+      },
+      itemBuilder: (_) => [
+        PopupMenuItem(value: 'clear', enabled: !recording, child: const Text('Borrar secuencia')),
+        const PopupMenuItem(value: 'diag', child: Text('Diagnóstico MIDI')),
+        const PopupMenuItem(value: 'settings', child: Text('Configuración')),
+      ],
+    );
+    if (keySummary case final key?) {
+      return Padding(
+        padding: const EdgeInsets.fromLTRB(8, 4, 0, 4),
+        child: Row(
+          children: [
+            record,
+            const SizedBox(width: 6),
+            ConnectionStatus(midi: midi, iconOnly: true),
+            Expanded(child: key),
+            const SizedBox(width: 6),
+            transpose,
+            menu,
+          ],
+        ),
+      );
+    }
     if (compact) {
       return Padding(
         padding: const EdgeInsets.fromLTRB(12, 6, 4, 6),
@@ -377,6 +470,7 @@ class _CurrentChord extends StatelessWidget {
     final spell = key?.spell;
     final notes = current.notes.toList()..sort();
     final alternatives = current.recognition.alternatives.take(3).toList();
+    final short = context.isShort;
 
     return Card(
       child: Padding(
@@ -402,7 +496,7 @@ class _CurrentChord extends StatelessWidget {
                   if (key != null)
                     Text(
                       'grado ${fmt.nashville(current.chord, key)} en ${key.name(settings.notation)}',
-                      style: text.titleLarge?.copyWith(color: scheme.primary),
+                      style: (short ? text.titleMedium : text.titleLarge)?.copyWith(color: scheme.primary),
                     ),
                   if (engine.layer != 0)
                     Text(
@@ -430,7 +524,7 @@ class _CurrentChord extends StatelessWidget {
                   ),
                 ),
                 SizedBox(width: context.isCompact ? 12 : 24),
-                if (alternatives.isNotEmpty)
+                if (alternatives.isNotEmpty && !short)
                   Expanded(
                     child: Text(
                       'También: ${alternatives.map((a) => '${fmt.format(a.chord, spell: spell)} ${(a.probability * 100).round()}%').join(' · ')}',
@@ -448,10 +542,13 @@ class _CurrentChord extends StatelessWidget {
 }
 
 class _Sequence extends StatelessWidget {
-  const _Sequence({required this.engine, required this.settings});
+  const _Sequence({required this.engine, required this.settings, this.dense = false});
 
   final ChordEngine engine;
   final AppSettings settings;
+
+  /// Pequeña, para ir encima del acorde (teléfono acostado).
+  final bool dense;
 
   @override
   Widget build(BuildContext context) {
@@ -459,6 +556,40 @@ class _Sequence extends StatelessWidget {
     final chords = engine.chords.reversed.toList();
     final fmt = settings.formatter;
     final key = engine.displayKey;
+    if (dense) {
+      return Container(
+        height: 46,
+        padding: const EdgeInsets.all(4),
+        decoration: BoxDecoration(
+          color: scheme.surfaceContainerHighest.withValues(alpha: 0.85),
+          borderRadius: BorderRadius.circular(12),
+        ),
+        child: ListView.separated(
+          shrinkWrap: true,
+          scrollDirection: Axis.horizontal,
+          reverse: true,
+          itemCount: chords.length,
+          separatorBuilder: (_, _) => const SizedBox(width: 4),
+          itemBuilder: (context, i) {
+            final latest = i == 0;
+            final chord = chords[i].chord;
+            final fg = latest ? scheme.onPrimaryContainer : scheme.onSurface;
+            return Container(
+              alignment: Alignment.center,
+              padding: const EdgeInsets.symmetric(horizontal: 10),
+              decoration: BoxDecoration(
+                color: latest ? scheme.primaryContainer : scheme.surfaceContainerHigh,
+                borderRadius: BorderRadius.circular(8),
+              ),
+              child: Text(
+                fmt.format(chord, spell: key?.spell),
+                style: TextStyle(fontSize: 17, fontWeight: latest ? FontWeight.w700 : FontWeight.w500, color: fg),
+              ),
+            );
+          },
+        ),
+      );
+    }
     return SizedBox(
       height: 72,
       child: chords.isEmpty

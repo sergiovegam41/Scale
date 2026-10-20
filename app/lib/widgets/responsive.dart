@@ -8,4 +8,7 @@ extension Responsive on BuildContext {
 
   /// Teléfono o ventana pequeña: menos de 700 de ancho o 500 de alto.
   bool get isCompact => screen.width < 700 || screen.height < 500;
+
+  /// Poco alto: teléfono acostado o ventana baja.
+  bool get isShort => screen.height < 500;
 }

@@ -6,9 +6,12 @@ import 'responsive.dart';
 
 /// Estado de la conexión MIDI con acciones para elegir o reconectar.
 class ConnectionStatus extends StatelessWidget {
-  const ConnectionStatus({super.key, required this.midi});
+  const ConnectionStatus({super.key, required this.midi, this.iconOnly = false});
 
   final MidiService midi;
+
+  /// Solo el ícono (el nombre queda en la ayuda): para filas con poco espacio.
+  final bool iconOnly;
 
   @override
   Widget build(BuildContext context) {
@@ -23,6 +26,20 @@ class ConnectionStatus extends StatelessWidget {
           _ when midi.devices.isEmpty => (Icons.usb_off, scheme.error, 'Sin dispositivos MIDI'),
           _ => (Icons.link_off, scheme.error, 'Desconectado'),
         };
+        if (iconOnly) {
+          return Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Tooltip(
+                message: midi.error ?? label,
+                child: Icon(icon, color: color),
+              ),
+              if (device == null && midi.devices.isNotEmpty && !midi.connecting)
+                TextButton(onPressed: () => midi.connect(midi.devices.first), child: const Text('Conectar')),
+              IconButton(tooltip: 'Buscar dispositivos', onPressed: midi.refresh, icon: const Icon(Icons.refresh)),
+            ],
+          );
+        }
         return Row(
           mainAxisSize: MainAxisSize.min,
           children: [
