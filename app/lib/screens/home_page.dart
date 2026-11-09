@@ -1,3 +1,6 @@
+import 'dart:io';
+
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:scale_core/scale_core.dart';
 
@@ -5,11 +8,14 @@ import '../analysis/chord_engine.dart';
 import '../midi/keyboard_state.dart';
 import '../midi/midi_service.dart';
 import '../settings.dart';
+import '../storage/score_repository.dart';
 import '../storage/song_repository.dart';
 import '../voice/singer_engine.dart';
 import '../widgets/responsive.dart';
 import 'live_page.dart';
 import 'play_page.dart';
+import 'score_page.dart';
+import 'scores_page.dart';
 import 'singer_page.dart';
 import 'song_list_page.dart';
 import 'song_page.dart';
@@ -24,6 +30,7 @@ class HomePage extends StatefulWidget {
     required this.engine,
     required this.settings,
     required this.repo,
+    required this.scores,
   });
 
   final MidiService midi;
@@ -31,6 +38,7 @@ class HomePage extends StatefulWidget {
   final ChordEngine engine;
   final AppSettings settings;
   final SongRepository repo;
+  final ScoreRepository scores;
 
   @override
   State<HomePage> createState() => _HomePageState();
@@ -40,7 +48,22 @@ class _HomePageState extends State<HomePage> {
   int index = 0;
   final SingerEngine singer = SingerEngine();
 
-  static const int _singerTab = 2;
+  static const int _singerTab = 3;
+
+  @override
+  void initState() {
+    super.initState();
+    // Solo para desarrollo en escritorio: SCALE_OPEN_SCORE=<archivo MusicXML>
+    // abre esa partitura al arrancar, sin guardarla.
+    final path = kDebugMode && !Platform.isAndroid ? Platform.environment['SCALE_OPEN_SCORE'] : null;
+    if (path != null) {
+      WidgetsBinding.instance.addPostFrameCallback((_) async {
+        final score = MusicXmlReader.readBytes(await File(path).readAsBytes(), id: 'debug', fileName: path);
+        if (!mounted) return;
+        Navigator.of(context).push(MaterialPageRoute(builder: (_) => ScorePage(score: score, midi: widget.midi, autoplay: Platform.environment['SCALE_AUTOPLAY'] == '1')));
+      });
+    }
+  }
 
   @override
   void dispose() {
@@ -75,6 +98,7 @@ class _HomePageState extends State<HomePage> {
   static const _tabs = [
     (Icons.piano, 'En vivo'),
     (Icons.library_music, 'Canciones'),
+    (Icons.queue_music, 'Partituras'),
     (Icons.mic, 'Cantante'),
     (Icons.donut_large, 'Herramientas'),
   ];
@@ -98,6 +122,7 @@ class _HomePageState extends State<HomePage> {
           onOpen: openSong,
           onCreate: (song) => openSong(song, edit: true),
         ),
+        ScoresPage(repo: widget.scores, midi: widget.midi),
         SingerPage(engine: singer, repo: widget.repo, settings: widget.settings),
         ToolsPage(midi: widget.midi, settings: widget.settings),
       ],

@@ -6,6 +6,7 @@ import 'midi/keyboard_state.dart';
 import 'midi/midi_service.dart';
 import 'screens/home_page.dart';
 import 'settings.dart';
+import 'storage/score_repository.dart';
 import 'storage/song_repository.dart';
 
 void main() {
@@ -28,6 +29,7 @@ void main() {
     engine: engine,
     settings: settings,
     repo: SongRepository()..load(),
+    scores: ScoreRepository()..load(),
   ));
 }
 
@@ -39,6 +41,7 @@ class ScaleApp extends StatelessWidget {
     required this.engine,
     required this.settings,
     required this.repo,
+    required this.scores,
   });
 
   final MidiService midi;
@@ -46,6 +49,7 @@ class ScaleApp extends StatelessWidget {
   final ChordEngine engine;
   final AppSettings settings;
   final SongRepository repo;
+  final ScoreRepository scores;
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +68,7 @@ class ScaleApp extends StatelessWidget {
         engine: engine,
         settings: settings,
         repo: repo,
+        scores: scores,
       ),
     );
   }

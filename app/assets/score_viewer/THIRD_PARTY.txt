@@ -1,0 +1,6 @@
+verovio-toolkit-wasm.js — Verovio 6.4.1 (https://www.verovio.org), paquete npm "verovio",
+sin modificar. Licencia: GNU Lesser General Public License v3.0 (LGPL-3.0-or-later).
+Código fuente: https://github.com/rism-digital/verovio
+Texto de la licencia: https://www.gnu.org/licenses/lgpl-3.0.html
+
+Incluye las fuentes musicales Leipzig, Bravura y Leland (SIL Open Font License 1.1).

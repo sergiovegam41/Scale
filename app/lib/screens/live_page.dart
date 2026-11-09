@@ -8,6 +8,7 @@ import '../settings.dart';
 import '../storage/song_repository.dart';
 import '../widgets/connection_status.dart';
 import '../widgets/dialogs.dart';
+import '../widgets/grand_staff.dart';
 import '../widgets/key_panel.dart';
 import '../widgets/piano_keyboard.dart';
 import '../widgets/responsive.dart';
@@ -480,35 +481,39 @@ class _CurrentChord extends StatelessWidget {
         child: Column(
           children: [
             Expanded(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  AnimatedOpacity(
-                    opacity: engine.sounding ? 1 : 0.55,
-                    duration: const Duration(milliseconds: 250),
-                    child: FittedBox(
-                      child: Text(
-                        fmt.format(current.chord, spell: spell),
-                        style: text.displayLarge?.copyWith(fontSize: 140, fontWeight: FontWeight.w600),
+              child: _withStaff(
+                context,
+                staff: GrandStaff(notes: current.notes, chord: current.chord, musicKey: key, dimmed: !engine.sounding),
+                name: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    AnimatedOpacity(
+                      opacity: engine.sounding ? 1 : 0.55,
+                      duration: const Duration(milliseconds: 250),
+                      child: FittedBox(
+                        child: Text(
+                          fmt.format(current.chord, spell: spell),
+                          style: text.displayLarge?.copyWith(fontSize: 140, fontWeight: FontWeight.w600),
+                        ),
                       ),
                     ),
-                  ),
-                  if (key != null)
+                    if (key != null)
+                      Text(
+                        'grado ${fmt.nashville(current.chord, key)} en ${key.name(settings.notation)}',
+                        style: (short ? text.titleMedium : text.titleLarge)?.copyWith(color: scheme.primary),
+                      ),
+                    if (engine.layer != 0)
+                      Text(
+                        'suena: ${fmt.format(current.chord.transpose(engine.layer), spell: key?.transpose(engine.layer).spell)}',
+                        style: text.titleLarge?.copyWith(color: scheme.tertiary),
+                      ),
+                    const SizedBox(height: 4),
                     Text(
-                      'grado ${fmt.nashville(current.chord, key)} en ${key.name(settings.notation)}',
-                      style: (short ? text.titleMedium : text.titleLarge)?.copyWith(color: scheme.primary),
+                      notes.map(settings.noteName).join('  '),
+                      style: text.titleMedium?.copyWith(color: scheme.onSurfaceVariant),
                     ),
-                  if (engine.layer != 0)
-                    Text(
-                      'suena: ${fmt.format(current.chord.transpose(engine.layer), spell: key?.transpose(engine.layer).spell)}',
-                      style: text.titleLarge?.copyWith(color: scheme.tertiary),
-                    ),
-                  const SizedBox(height: 4),
-                  Text(
-                    notes.map(settings.noteName).join('  '),
-                    style: text.titleMedium?.copyWith(color: scheme.onSurfaceVariant),
-                  ),
-                ],
+                  ],
+                ),
               ),
             ),
             Row(
@@ -539,6 +544,30 @@ class _CurrentChord extends StatelessWidget {
       ),
     );
   }
+}
+
+/// El nombre del acorde y su pentagrama: lado a lado si hay ancho, si no
+/// el pentagrama debajo.
+Widget _withStaff(BuildContext context, {required Widget name, required Widget staff}) {
+  return LayoutBuilder(
+    builder: (context, c) {
+      if (c.maxWidth >= c.maxHeight * 1.3) {
+        return Row(
+          children: [
+            Expanded(flex: 5, child: name),
+            const SizedBox(width: 12),
+            Expanded(flex: 4, child: staff),
+          ],
+        );
+      }
+      return Column(
+        children: [
+          Expanded(flex: 5, child: name),
+          Expanded(flex: 4, child: staff),
+        ],
+      );
+    },
+  );
 }
 
 class _Sequence extends StatelessWidget {
