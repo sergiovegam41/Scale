@@ -3,17 +3,33 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:scale_core/scale_core.dart';
 
+import '../analysis/chord_engine.dart';
+import '../midi/keyboard_state.dart';
 import '../midi/midi_service.dart';
 import '../storage/score_repository.dart';
+import '../storage/song_repository.dart';
 import '../widgets/dialogs.dart';
+import 'record_score_page.dart';
 import 'score_page.dart';
 
 /// Biblioteca de partituras: importar MusicXML y abrirlas.
 class ScoresPage extends StatefulWidget {
-  const ScoresPage({super.key, required this.repo, required this.midi});
+  const ScoresPage({
+    super.key,
+    required this.repo,
+    required this.midi,
+    required this.keyboard,
+    required this.engine,
+    required this.songs,
+    this.notation = Notation.american,
+  });
 
   final ScoreRepository repo;
   final MidiService midi;
+  final KeyboardState keyboard;
+  final ChordEngine engine;
+  final SongRepository songs;
+  final Notation notation;
 
   @override
   State<ScoresPage> createState() => _ScoresPageState();
@@ -25,7 +41,22 @@ class _ScoresPageState extends State<ScoresPage> {
   static const _extensions = ['musicxml', 'mxl', 'xml'];
 
   void _open(Score score) {
-    Navigator.of(context).push(MaterialPageRoute(builder: (_) => ScorePage(score: score, midi: widget.midi)));
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => ScorePage(score: score, midi: widget.midi, repo: widget.repo, notation: widget.notation),
+    ));
+  }
+
+  void _record() {
+    Navigator.of(context).push(MaterialPageRoute(
+      builder: (_) => RecordScorePage(
+        midi: widget.midi,
+        keyboard: widget.keyboard,
+        engine: widget.engine,
+        scores: widget.repo,
+        songs: widget.songs,
+        notation: widget.notation,
+      ),
+    ));
   }
 
   Future<void> _import() async {
@@ -123,6 +154,13 @@ class _ScoresPageState extends State<ScoresPage> {
                     children: [
                       Expanded(child: Text('Partituras', style: text.headlineSmall)),
                       FilledButton.icon(
+                        style: FilledButton.styleFrom(backgroundColor: const Color(0xFFE53935), foregroundColor: Colors.white),
+                        onPressed: _record,
+                        icon: const Icon(Icons.fiber_manual_record),
+                        label: const Text('Grabar'),
+                      ),
+                      const SizedBox(width: 8),
+                      FilledButton.icon(
                         onPressed: importing ? null : _import,
                         icon: importing
                             ? const SizedBox.square(dimension: 18, child: CircularProgressIndicator(strokeWidth: 2))
@@ -163,8 +201,8 @@ class _ScoresPageState extends State<ScoresPage> {
               Text('Todavía no hay partituras', style: text.titleLarge),
               const SizedBox(height: 8),
               Text(
-                'Importa un archivo MusicXML (.musicxml o .mxl).\n'
-                'Desde MuseScore: Archivo › Exportar › MusicXML.',
+                'Graba tocando con metrónomo, o importa un archivo MusicXML\n'
+                '(.musicxml o .mxl; desde MuseScore: Archivo › Exportar › MusicXML).',
                 textAlign: TextAlign.center,
                 style: text.bodyLarge?.copyWith(color: scheme.onSurfaceVariant),
               ),
@@ -179,11 +217,12 @@ class _ScoresPageState extends State<ScoresPage> {
       '${score.measures.length} compases',
       '${score.noteCount} notas',
       if (score.parts.length > 1) '${score.parts.length} partes',
+      if (score.recording != null) 'grabada',
     ].join(' · ');
     return Card(
       margin: EdgeInsets.zero,
       child: ListTile(
-        leading: const Icon(Icons.description_outlined),
+        leading: Icon(score.recording != null ? Icons.piano : Icons.description_outlined),
         title: Text(score.title, overflow: TextOverflow.ellipsis),
         subtitle: Text(details, overflow: TextOverflow.ellipsis),
         onTap: () => _open(score),

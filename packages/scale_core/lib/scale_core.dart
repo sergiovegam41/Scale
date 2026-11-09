@@ -21,6 +21,7 @@ export 'src/score/musicxml_reader.dart';
 export 'src/score/musicxml_writer.dart';
 export 'src/score/score.dart';
 export 'src/score/score_timeline.dart';
+export 'src/score/transcriber.dart';
 export 'src/theory/chord.dart';
 export 'src/theory/chord_format.dart';
 export 'src/theory/chord_parser.dart';

@@ -1,5 +1,6 @@
 import '../theory/chord.dart';
 import '../theory/pitch.dart';
+import 'transcriber.dart';
 
 /// Pulsos por negra en todo el modelo de partitura.
 const int ticksPerQuarter = 480;
@@ -492,6 +493,7 @@ class Score {
     this.source,
     List<Measure>? measures,
     List<ScorePart>? parts,
+    this.recording,
     DateTime? createdAt,
     DateTime? updatedAt,
   })  : measures = measures ?? [],
@@ -512,6 +514,7 @@ class Score {
       source: j['source'] == null ? null : ScoreSource.fromJson(j['source'] as Map<String, dynamic>),
       measures: [for (final m in j['measures'] as List<dynamic>) Measure.fromJson(m as Map<String, dynamic>)],
       parts: [for (final p in j['parts'] as List<dynamic>) ScorePart.fromJson(p as Map<String, dynamic>)],
+      recording: j['recording'] == null ? null : ScoreRecording.fromJson(j['recording'] as Map<String, dynamic>),
       createdAt: DateTime.tryParse(j['created'] as String? ?? ''),
       updatedAt: DateTime.tryParse(j['updated'] as String? ?? ''),
     );
@@ -524,6 +527,10 @@ class Score {
   ScoreSource? source;
   List<Measure> measures;
   List<ScorePart> parts;
+
+  /// Si salió de una grabación: la interpretación original, para oírla tal
+  /// como se tocó o volver a escribirla con otros ajustes.
+  ScoreRecording? recording;
   DateTime createdAt;
   DateTime updatedAt;
 
@@ -559,5 +566,6 @@ class Score {
         'updated': updatedAt.toIso8601String(),
         'measures': [for (final m in measures) m.toJson()],
         'parts': [for (final p in parts) p.toJson()],
+        if (recording != null) 'recording': recording!.toJson(),
       };
 }

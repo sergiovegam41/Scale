@@ -202,7 +202,15 @@ class _PartWriter {
       });
       final id = chord.quality.id;
       final kind = _kinds[id] ?? (chord.quality.family.name == 'minor' ? 'minor' : 'major');
-      b.element('kind', attributes: {'text': chord.quality.symbol}, nest: kind);
+      // El texto del cifrado sin "add9": eso lo dice el <degree> (si no,
+      // algunos programas lo escriben dos veces).
+      final shown = switch (id) {
+        'add9' => '',
+        'madd9' => 'm',
+        '69' => '6',
+        _ => chord.quality.symbol,
+      };
+      b.element('kind', attributes: {'text': shown}, nest: kind);
       final bass = chord.bass;
       if (bass != null) {
         final bs = _defaultSpelling(bass, m.fifths);
