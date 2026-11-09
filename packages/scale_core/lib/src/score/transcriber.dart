@@ -1,6 +1,7 @@
 import 'dart:math' as math;
 import 'dart:typed_data';
 
+import '../analysis/chord_recognizer.dart';
 import '../analysis/key_estimator.dart';
 import '../analysis/live_analyzer.dart';
 import '../analysis/song_analyzer.dart';
@@ -254,7 +255,7 @@ class _RawNote {
 class _Onset {
   _Onset(this.time);
 
-  final double time;
+  double time;
   final List<_RawNote> notes = [];
   double salience = 1;
   int tick = 0;
@@ -489,8 +490,7 @@ class PerformanceTranscriber {
     }
     part.events.sort((a, b) => a.tick != b.tick ? a.tick.compareTo(b.tick) : a.staff.compareTo(b.staff));
     if (settings.dynamics) part.directions.addAll(_dynamics(score, notes));
-    int tickOf(double micros) => ((beats.pos(micros) - origin) * pt).round();
-    if (settings.chordSymbols) part.chords.addAll(_chordSymbols(score, tickOf));
+    if (settings.chordSymbols) part.chords.addAll(_chordSymbols(score, notes, key));
     score.recording = ScoreRecording(
       take: take,
       settings: settings,
@@ -553,9 +553,21 @@ class PerformanceTranscriber {
         }
       }
     }
+    // Roces: una tecla vecina tocada sin querer junto a otra (muy corta,
+    // más suave y casi a la vez) no es una nota.
+    bool smudge(_RawNote n) {
+      if (n.off - n.on > 110000) return false;
+      for (final m in out) {
+        if (identical(m, n) || (m.on - n.on).abs() > 50000) continue;
+        final d = (m.midi - n.midi).abs();
+        if (d >= 1 && d <= 2 && m.velocity >= n.velocity && m.off - m.on > n.off - n.on) return true;
+      }
+      return false;
+    }
+
     return [
       for (final n in out)
-        if (n.off - n.on >= 25000) n,
+        if (n.off - n.on >= 25000 && !smudge(n)) n,
     ];
   }
 
@@ -563,15 +575,33 @@ class PerformanceTranscriber {
   List<_Onset> _onsets(List<_RawNote> notes) {
     final out = <_Onset>[];
     for (final n in notes) {
-      if (out.isEmpty || n.on - out.last.time > 35000) out.add(_Onset(n.on.toDouble()));
+      if (out.isEmpty || !_sameAttack(out.last, n)) out.add(_Onset(n.on.toDouble()));
       out.last.notes.add(n);
     }
     for (final o in out) {
+      // Un acorde arpegiado cuenta en el medio de su arpegio.
+      final ons = [for (final n in o.notes) n.on]..sort();
+      o.time = ons[ons.length ~/ 2].toDouble();
       final loud = o.notes.map((n) => n.velocity).reduce(math.max);
       final low = o.notes.map((n) => n.midi).reduce(math.min);
       o.salience = 0.6 + 0.4 * math.min(1, loud / 100) + 0.25 * math.min(3, o.notes.length - 1) + (low < 55 ? 0.5 : 0);
     }
     return out;
+  }
+
+  /// Si [n] es parte del mismo ataque que [o]: casi a la vez (35 ms) o un
+  /// acorde arpegiado (notas seguidas a menos de 120 ms, todas aún pulsadas
+  /// cuando entra la nueva).
+  static bool _sameAttack(_Onset o, _RawNote n) {
+    final first = o.notes.first.on;
+    if (n.on - first <= 35000) return true;
+    final last = o.notes.last.on;
+    if (n.on - last > 120000 || n.on - first > 250000) return false;
+    if (n.off - n.on < 150000) return false;
+    for (final m in o.notes) {
+      if (m.midi == n.midi || m.off < n.on + 100000) return false;
+    }
+    return true;
   }
 
   /// Adelanto (negativo) o retraso típico respecto al metrónomo: la mediana
@@ -600,7 +630,7 @@ class PerformanceTranscriber {
   List<(int, double)> get _subdivisions {
     final semis = settings.grid >= 4;
     return switch (_pulseQ) {
-      1 => [(1, 0), (2, 1.5), if (semis) (4, 3), if (settings.triplets) (3, 4.5)],
+      1 => [(1, 0), (2, 1.5), if (semis) (4, 3), if (settings.triplets) (3, 4.5), if (semis) (8, 6)],
       1.5 => [(1, 0), (3, 1.5), if (semis) (6, 3)],
       2 => [(1, 0), (2, 0), (4, 1.5), if (semis) (8, 3)],
       0.5 => [(1, 0), if (semis) (2, 3)],
@@ -866,11 +896,35 @@ class PerformanceTranscriber {
     }
     // Peso de cada pulso: los ataques que caen justo en él, más pesados si
     // la nota es larga.
+    // Bajo: la nota más grave de su entorno (un pulso antes y después), no
+    // cualquier nota de un arpegio de la mano izquierda.
+    final lows = [for (final o in onsets) o.notes.map((n) => n.midi).reduce(math.min)];
+    bool isBass(int i) {
+      if (lows[i] >= 60) return false;
+      for (var k = i - 1; k >= 0 && onsets[i].tick - onsets[k].tick <= pt; k--) {
+        if (lows[k] < lows[i]) return false;
+      }
+      for (var k = i + 1; k < onsets.length && onsets[k].tick - onsets[i].tick <= pt; k++) {
+        if (lows[k] < lows[i]) return false;
+      }
+      return true;
+    }
+
+    final bassAt = [for (var i = 0; i < onsets.length; i++) isBass(i)];
     final weight = <int, double>{};
     for (final (i, o) in onsets.indexed) {
       if (o.tick % pt != 0) continue;
-      final next = i + 1 < onsets.length ? onsets[i + 1].tick : o.notes.map((n) => n.endTick).reduce(math.max);
-      final w = o.salience * (1 + 0.8 * math.min(2, (next - o.tick) / pt));
+      // Un bajo cuenta hasta el siguiente bajo (aunque la otra mano toque
+      // entre medias): en "bajo – acorde" el bajo marca la parte fuerte.
+      final bass = bassAt[i];
+      var next = o.notes.map((n) => n.endTick).reduce(math.max);
+      for (var k = i + 1; k < onsets.length; k++) {
+        if (!bass || bassAt[k]) {
+          next = onsets[k].tick;
+          break;
+        }
+      }
+      final w = o.salience * (1 + 0.8 * math.min(2, (next - o.tick) / pt)) * (bass ? 1.2 : 1);
       final j = o.tick ~/ pt;
       weight[j] = (weight[j] ?? 0) + w;
     }
@@ -1142,7 +1196,16 @@ class PerformanceTranscriber {
           } else {
             // A contratiempo: alineada con su propio valor y sin cruzar el
             // pulso siguiente (la síncopa se escribe ligada).
-            if (rel % math.min(type.ticks, pulse) != 0 || s + len > nextPulse) continue;
+            // Excepción: la negra a contratiempo que acaba justo ahí
+            // (♪ ♩ ♪), si no cruza la mitad de un 4/4.
+            final syncopa =
+                dots == 0 &&
+                type.ticks == pulse &&
+                pulse == ticksPerQuarter &&
+                rel % pulse == pulse ~/ 2 &&
+                s + len == segEnd &&
+                !(m.time.beats == 4 && m.time.beatType == 4 && nextPulse - m.tick == m.length ~/ 2);
+            if (!syncopa && (rel % math.min(type.ticks, pulse) != 0 || s + len > nextPulse)) continue;
           }
           out.add(_Piece(s, len, type, dots, null, null));
           s += len;
@@ -1211,18 +1274,26 @@ class PerformanceTranscriber {
     return out;
   }
 
-  /// Los acordes que Scale detecta en la toma, como cifrado: como mucho
-  /// uno por medio compás (por compás en 2/4 y 3/4), el que más suena en
-  /// ese tramo, y solo cuando cambia.
-  List<ChordSymbol> _chordSymbols(Score score, int Function(double micros) tickOf) {
-    final spans = <(int, int, Chord)>[];
-    for (final c in SongAnalyzer.chordsFromTake(take)) {
-      final start = c.startMicros;
-      if (start == null) continue;
-      final from = tickOf(start.toDouble());
-      final to = tickOf((start + (c.durationMicros ?? 0)).toDouble());
-      if (to > from) spans.add((from, to, c.chord));
+  /// El cifrado: en cada tramo (medio compás en 4/4; un compás en 2/4,
+  /// 3/4 y 6/8) las notas que más suenan, contando cada bajo hasta el
+  /// siguiente bajo (en "bajo – acorde" el bajo se suelta enseguida pero se
+  /// sigue oyendo) y juntando los arpegios. Solo donde hay acompañamiento
+  /// (mano izquierda o bajo); se escribe cuando cambia.
+  List<ChordSymbol> _chordSymbols(Score score, List<_RawNote> notes, MusicKey? key) {
+    final sorted = [...notes]..sort((a, b) => a.tick.compareTo(b.tick));
+    final pt = _pt;
+    // Bajos: la nota más grave de su entorno (un pulso a cada lado).
+    final bassEnd = <_RawNote, int>{};
+    final basses = [
+      for (final n in sorted)
+        if (n.midi < 55 && !sorted.any((m) => (m.tick - n.tick).abs() <= pt && m.midi < n.midi)) n,
+    ];
+    for (var k = 0; k < basses.length; k++) {
+      final n = basses[k];
+      final next = k + 1 < basses.length ? basses[k + 1].tick : n.endTick;
+      bassEnd[n] = math.max(n.endTick, math.min(next, n.tick + 4 * pt));
     }
+    const recognizer = ChordRecognizer();
     final out = <ChordSymbol>[];
     for (final m in score.measures) {
       final t = m.time;
@@ -1231,21 +1302,76 @@ class PerformanceTranscriber {
           : (pulseQuarters(t) == 1.5 && t.beats >= 12 ? t.measureTicks ~/ 2 : t.measureTicks);
       for (var s = m.tick; s < m.end; s += slot) {
         final e = math.min(m.end, s + slot);
-        final weight = <Chord, int>{};
-        for (final (from, to, chord) in spans) {
-          final overlap = (math.min(to, e) - math.max(from, s)).toInt();
-          if (overlap > 0) weight[chord] = (weight[chord] ?? 0) + overlap;
+        final weight = <int, int>{};
+        var accompanied = false;
+        int? lowest;
+        for (final n in sorted) {
+          if (n.tick >= e) break;
+          final end = bassEnd[n] ?? n.endTick;
+          final overlap = (math.min(end, e) - math.max(n.tick, s)).toInt();
+          if (overlap <= 0) continue;
+          weight[n.midi % 12] = (weight[n.midi % 12] ?? 0) + overlap;
+          if (n.staff == 2 || bassEnd.containsKey(n)) accompanied = true;
+          if (lowest == null || n.midi < lowest) lowest = n.midi;
         }
-        if (weight.isEmpty) continue;
-        final best = weight.entries.reduce((a, b) => a.value >= b.value ? a : b);
-        // Debe sonar al menos la mitad del tramo para escribirse.
-        if (best.value * 2 < e - s) continue;
-        if (out.isNotEmpty && out.last.chord == best.key) continue;
-        out.add(ChordSymbol(tick: s, chord: best.key));
+        if (!accompanied || weight.length < 2) continue;
+        // Las de paso (poco tiempo sonando) no cuentan.
+        final top = weight.values.reduce(math.max);
+        final pcs = {
+          for (final w in weight.entries)
+            if (w.value >= top * 0.3) w.key,
+        };
+        final found = recognizer.recognizePitchClasses(pcs, bass: lowest! % 12);
+        if (found == null || found.candidates.isEmpty) continue;
+        var chord = _simple(found.candidates.first.chord);
+        if (chord.quality == ChordQuality.power) {
+          // Sin tercera clara: la que haya sonado aunque sea poco o, si no,
+          // la de la tonalidad.
+          final major = weight[(chord.root + 4) % 12] ?? 0;
+          final minor = weight[(chord.root + 3) % 12] ?? 0;
+          final q = major != minor
+              ? (major > minor ? ChordQuality.major : ChordQuality.minor)
+              : _diatonic(chord.root, key);
+          if (q != null) chord = Chord(chord.root, q, bass: chord.bass);
+        }
+        if (out.isNotEmpty && out.last.chord == chord) continue;
+        out.add(ChordSymbol(tick: s, chord: chord));
       }
     }
     return out;
   }
+}
+
+/// Mayor o menor según la tonalidad (I, IV, V mayores; ii, iii, vi menores
+/// en mayor; i, iv menores y III, V, VI, VII mayores en menor).
+ChordQuality? _diatonic(int root, MusicKey? key) {
+  if (key == null) return null;
+  final d = (root - key.tonic) % 12;
+  if (key.isMajor) {
+    if (const {0, 5, 7}.contains(d)) return ChordQuality.major;
+    if (const {2, 4, 9}.contains(d)) return ChordQuality.minor;
+  } else {
+    if (const {0, 5}.contains(d)) return ChordQuality.minor;
+    if (const {3, 7, 8, 10}.contains(d)) return ChordQuality.major;
+  }
+  return null;
+}
+
+/// El cifrado de una partitura, sin adornos: las notas de la melodía hacen
+/// que se detecten add9, 6 o 9 que no son parte de la armonía. Se queda la
+/// tríada (o la séptima) y el bajo solo si es una inversión.
+Chord _simple(Chord c) {
+  final q = switch (c.quality) {
+    ChordQuality.add9 || ChordQuality.sixth || ChordQuality.sixNine || ChordQuality.add4 => ChordQuality.major,
+    ChordQuality.minorAdd9 || ChordQuality.minorSixth || ChordQuality.minorMajor7 => ChordQuality.minor,
+    ChordQuality.dominant9 => ChordQuality.dominant7,
+    ChordQuality.major9 => ChordQuality.major7,
+    ChordQuality.minor9 => ChordQuality.minor7,
+    final other => other,
+  };
+  final b = c.bass;
+  final inversion = b != null && q.intervals.take(3).map((i) => (c.root + i) % 12).contains(b);
+  return Chord(c.root, q, bass: inversion ? b : null);
 }
 
 /// Un trozo escribible de una nota o un silencio.

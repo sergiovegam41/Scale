@@ -120,7 +120,11 @@ void main() {
 
   test('síncopa: la nota que cruza el pulso se liga', () {
     final s = transcribe(takeOf([(0, 0.5, 60, 70), (0.5, 1, 62, 70), (1.5, 0.5, 64, 70), (2, 2, 65, 70)]));
-    expect(staffOf(s, 1), ['eighth@0.0:C4', 'eighth@0.5:D4~', 'eighth@1.0:D4', 'eighth@1.5:E4', 'half@2.0:F4']);
+    // ♪ ♩ ♪: la negra a contratiempo se escribe sin ligar…
+    expect(staffOf(s, 1), ['eighth@0.0:C4', 'quarter@0.5:D4', 'eighth@1.5:E4', 'half@2.0:F4']);
+    // …salvo que cruce la mitad del 4/4.
+    final mid = transcribe(takeOf([(0, 1.5, 60, 70), (1.5, 1, 62, 70), (2.5, 1.5, 64, 70)]));
+    expect(staffOf(mid, 1), ['quarter.@0.0:C4', 'eighth@1.5:D4~', 'eighth@2.0:D4', 'eighth@2.5:E4~', 'quarter@3.0:E4']);
   });
 
   test('negra con puntillo y corchea', () {
@@ -296,6 +300,74 @@ void main() {
     expect(s.recording!.followedMetronome, isTrue);
     expect(s.measures.first.tempo, 90);
     expect(s.measures.first.time, const TimeSignature(3, 4));
+  });
+
+  test('acorde arpegiado: un solo acorde en su pulso', () {
+    final events = <MidiEvent>[];
+    const q = 600000;
+    for (var bar = 0; bar < 3; bar++) {
+      final t = 2400000 + bar * 4 * q;
+      for (final (i, m) in [48, 55, 60, 64, 67].indexed) {
+        events
+          ..add(MidiEvent.noteOn(t - 120000 + i * 60000, m, velocity: 60))
+          ..add(MidiEvent.noteOff(t + 3 * q, m));
+      }
+    }
+    events.sort((a, b) => a.timeMicros.compareTo(b.timeMicros));
+    final s = transcribe(
+      Take(id: 't', recordedAt: DateTime(2026), events: events),
+      TranscriptionSettings(bpm: 100, time: TimeSignature.common, startMicros: 2400000),
+    );
+    expect(staffOf(s, 1).first, 'half.@0.0:C4,E4,G4');
+    expect(staffOf(s, 2).first, 'half.@0.0:C3,G3');
+  });
+
+  test('un roce con la tecla vecina no es una nota', () {
+    final take = takeOf([(0, 1, 60, 70), (1, 1, 62, 70), (2, 2, 64, 70)]);
+    final extra = MidiEvent.noteOn(take.events[2].timeMicros + 20000, 63, velocity: 30);
+    final off = MidiEvent.noteOff(extra.timeMicros + 70000, 63);
+    final events = [...take.events, extra, off]..sort((a, b) => a.timeMicros.compareTo(b.timeMicros));
+    final s = transcribe(Take(id: 't', recordedAt: DateTime(2026), events: events));
+    expect([for (final e in s.parts.single.events) for (final n in e.notes) n.midi], [60, 62, 64]);
+  });
+
+  test('una escala rápida se escribe en fusas, sin mezclar notas', () {
+    final notes = <Played>[
+      for (var i = 0; i < 8; i++) (1 + i / 8, 1 / 8, 60 + [0, 2, 4, 5, 7, 9, 11, 12][i], 60),
+      (2, 2, 74, 70),
+    ];
+    final s = transcribe(takeOf(notes, jitterMs: 8));
+    final rh = staffOf(s, 1).where((e) => !e.startsWith('r')).toList();
+    expect(rh.every((e) => !e.contains(',')), isTrue, reason: rh.join(' '));
+    expect(rh.length, 9);
+  });
+
+  test('bajo y acorde (sin metrónomo): el bajo cae en la parte fuerte', () {
+    final notes = <Played>[
+      for (var bar = 0; bar < 6; bar++) ...[
+        (bar * 4.0, 0.15, bar.isEven ? 43 : 38, 70),
+        for (final m in bar.isEven ? [59, 62, 66] : [57, 62, 66]) (bar * 4.0 + 1, 2, m, 55),
+      ],
+    ];
+    final s = transcribe(takeAt(notes, (b) => 2e6 + b * 730000), settingsFor(bpm: 100));
+    expect(s.recording!.followedMetronome, isFalse);
+    expect(s.measures.first.implicit, isFalse);
+    expect(staffOf(s, 2).first, startsWith('quarter@0.0:'));
+  });
+
+  test('el cifrado se queda con lo esencial', () {
+    final notes = <Played>[];
+    // D con la novena en la melodía (Dadd9) y G con la sexta.
+    for (final (i, chord) in [
+      [50, 57, 62, 66, 76],
+      [43, 55, 59, 62, 64],
+    ].indexed) {
+      for (final m in chord) {
+        notes.add((i * 4.0, 4, m, 70));
+      }
+    }
+    final s = transcribe(takeOf(notes));
+    expect(s.parts.single.chords.map((c) => c.chord), [Chord(2, ChordQuality.major), Chord(7, ChordQuality.major)]);
   });
 
   test('sin notas no hay partitura', () {
