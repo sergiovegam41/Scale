@@ -195,6 +195,7 @@ class ScoreNote {
     required this.octave,
     this.tieStart = false,
     this.tieStop = false,
+    this.velocity,
   });
 
   factory ScoreNote.fromJson(Map<String, dynamic> j) => ScoreNote(
@@ -204,6 +205,7 @@ class ScoreNote {
         octave: j['o'] as int,
         tieStart: j['ts'] as bool? ?? false,
         tieStop: j['te'] as bool? ?? false,
+        velocity: j['v'] as int?,
       );
 
   /// Estable: no cambia al guardar ni al editar otras notas.
@@ -220,6 +222,11 @@ class ScoreNote {
   /// Viene ligada de la anterior.
   bool tieStop;
 
+  /// Fuerza con que se tocó (1..127), si se conoce: la de una grabación o la
+  /// indicada nota a nota en el archivo. Si es null, sale de las dinámicas
+  /// escritas (p, mf, f…).
+  int? velocity;
+
   Map<String, dynamic> toJson() => {
         'id': id,
         'm': midi,
@@ -228,6 +235,7 @@ class ScoreNote {
         'o': octave,
         if (tieStart) 'ts': true,
         if (tieStop) 'te': true,
+        if (velocity != null) 'v': velocity,
       };
 }
 
@@ -307,6 +315,62 @@ class ScoreEvent {
       };
 }
 
+/// Indicación de dinámica escrita: una marca (p, mf, f…) o un regulador
+/// (crescendo / diminuendo y su final).
+class ScoreDirection {
+  ScoreDirection({required this.tick, required this.kind, required this.value, this.staff = 1});
+
+  factory ScoreDirection.fromJson(Map<String, dynamic> j) => ScoreDirection(
+        tick: j['t'] as int,
+        kind: j['k'] == 'wedge' ? DirectionKind.wedge : DirectionKind.dynamic,
+        value: j['val'] as String,
+        staff: j['s'] as int? ?? 1,
+      );
+
+  int tick;
+  final DirectionKind kind;
+
+  /// Marca ('pp', 'mf', 'sfz'…) o, en un regulador, 'crescendo',
+  /// 'diminuendo' o 'stop'.
+  final String value;
+  int staff;
+
+  /// Fuerza MIDI típica de cada marca (la misma escala que MuseScore).
+  static const Map<String, int> velocities = {
+    'pppp': 10, 'ppp': 16, 'pp': 33, 'p': 49, 'mp': 64, 'mf': 80,
+    'f': 96, 'ff': 112, 'fff': 126, 'ffff': 127,
+    'sf': 112, 'sfz': 112, 'sffz': 126, 'fz': 112, 'rf': 112, 'rfz': 112, 'fp': 96, 'sfp': 112,
+  };
+
+  /// Marcas que solo acentúan una nota, no cambian el nivel general.
+  static const Set<String> accents = {'sf', 'sfz', 'sffz', 'fz', 'rf', 'rfz', 'fp', 'sfp'};
+
+  /// Marca más cercana a una fuerza MIDI (para escribir las dinámicas de una
+  /// grabación).
+  static String markFor(int velocity) {
+    const levels = ['ppp', 'pp', 'p', 'mp', 'mf', 'f', 'ff', 'fff'];
+    var best = 'mf';
+    var bestDiff = 999;
+    for (final l in levels) {
+      final d = (velocities[l]! - velocity).abs();
+      if (d < bestDiff) {
+        bestDiff = d;
+        best = l;
+      }
+    }
+    return best;
+  }
+
+  Map<String, dynamic> toJson() => {
+        't': tick,
+        'k': kind.name,
+        'val': value,
+        if (staff != 1) 's': staff,
+      };
+}
+
+enum DirectionKind { dynamic, wedge }
+
 /// Un cifrado escrito sobre el pentagrama.
 class ChordSymbol {
   ChordSymbol({required this.tick, required this.chord, this.text});
@@ -332,10 +396,12 @@ class ScorePart {
     List<Clef>? clefs,
     List<ScoreEvent>? events,
     List<ChordSymbol>? chords,
+    List<ScoreDirection>? directions,
     this.program,
   })  : clefs = clefs ?? [for (var i = 0; i < staves; i++) i == 0 ? Clef.treble : Clef.bass],
         events = events ?? [],
-        chords = chords ?? [];
+        chords = chords ?? [],
+        directions = directions ?? [];
 
   factory ScorePart.fromJson(Map<String, dynamic> j) => ScorePart(
         id: j['id'] as String,
@@ -344,6 +410,9 @@ class ScorePart {
         clefs: [for (final c in (j['clefs'] as List<dynamic>? ?? const [])) Clef.fromJson(c as Map<String, dynamic>)],
         events: [for (final e in (j['events'] as List<dynamic>? ?? const [])) ScoreEvent.fromJson(e as Map<String, dynamic>)],
         chords: [for (final c in (j['chords'] as List<dynamic>? ?? const [])) ChordSymbol.fromJson(c as Map<String, dynamic>)],
+        directions: [
+          for (final d in (j['dirs'] as List<dynamic>? ?? const [])) ScoreDirection.fromJson(d as Map<String, dynamic>),
+        ],
         program: j['program'] as int?,
       );
 
@@ -358,6 +427,9 @@ class ScorePart {
   List<ScoreEvent> events;
   List<ChordSymbol> chords;
 
+  /// Dinámicas escritas, ordenadas por inicio.
+  List<ScoreDirection> directions;
+
   /// Instrumento General MIDI (0 = piano).
   int? program;
 
@@ -368,6 +440,7 @@ class ScorePart {
         'clefs': [for (final c in clefs) c.toJson()],
         'events': [for (final e in events) e.toJson()],
         if (chords.isNotEmpty) 'chords': [for (final c in chords) c.toJson()],
+        if (directions.isNotEmpty) 'dirs': [for (final d in directions) d.toJson()],
         if (program != null) 'program': program,
       };
 }

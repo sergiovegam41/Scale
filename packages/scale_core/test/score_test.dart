@@ -243,6 +243,57 @@ void main() {
     });
   });
 
+  group('dinámicas', () {
+    const xml = '<?xml version="1.0"?>'
+        '<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>x</part-name></score-part></part-list>'
+        '<part id="P1">'
+        '<measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>'
+        '<direction><direction-type><dynamics><p/></dynamics></direction-type></direction>'
+        '<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '<direction><direction-type><wedge type="crescendo"/></direction-type></direction>'
+        '<note><pitch><step>D</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '<note><pitch><step>E</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '<note><pitch><step>F</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '</measure><measure number="2">'
+        '<direction><direction-type><wedge type="stop"/></direction-type></direction>'
+        '<direction><direction-type><dynamics><f/></dynamics></direction-type></direction>'
+        '<note><pitch><step>G</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '<direction><direction-type><dynamics><sfz/></dynamics></direction-type></direction>'
+        '<note><pitch><step>A</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '<note dynamics="50"><pitch><step>B</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '<note><rest/><duration>1</duration><voice>1</voice><type>quarter</type></note>'
+        '</measure></part></score-partwise>';
+
+    test('marcas, regulador, acento y fuerza nota a nota', () {
+      final s = MusicXmlReader.read(xml, id: 'x');
+      expect(s.parts.single.directions.map((d) => d.value), ['p', 'crescendo', 'stop', 'f', 'sfz']);
+      final v = ScoreTimeline.of(s).notes.map((n) => n.velocity).toList();
+      expect(v[0], 49); // p
+      expect(v[1], greaterThanOrEqualTo(49)); // crescendo de p a f
+      expect(v[2], greaterThan(v[1]));
+      expect(v[3], greaterThan(v[2]));
+      expect(v[3], lessThan(96));
+      expect(v[4], 96); // f
+      expect(v[5], 112); // sfz
+      expect(v[6], 45); // 50 % de un forte (90)
+    });
+
+    test('ida y vuelta conserva marcas y fuerza', () {
+      final a = MusicXmlReader.read(xml, id: 'x');
+      final b = MusicXmlReader.read(MusicXmlWriter.write(a), id: 'x');
+      expect(b.parts.single.directions.map((d) => '${d.tick}:${d.value}'),
+          a.parts.single.directions.map((d) => '${d.tick}:${d.value}'));
+      expect(ScoreTimeline.of(b).notes.map((n) => n.velocity), ScoreTimeline.of(a).notes.map((n) => n.velocity));
+    });
+
+    test('sin dinámicas, mezzoforte; marca más cercana a una fuerza', () {
+      final t = ScoreTimeline.of(MusicXmlReader.read(_measures(['']), id: 'x'));
+      expect(t.notes.single.velocity, ScoreDynamics.defaultVelocity);
+      expect(ScoreDirection.markFor(45), 'p');
+      expect(ScoreDirection.markFor(100), 'f');
+    });
+  });
+
   test('JSON ida y vuelta', () {
     final a = MusicXmlReader.read(_piano, id: 's1');
     final b = Score.fromJson(jsonDecode(jsonEncode(a.toJson())) as Map<String, dynamic>);

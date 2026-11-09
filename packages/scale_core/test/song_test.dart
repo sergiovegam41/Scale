@@ -382,4 +382,22 @@ void main() {
       expect(song.keyAt(5), MusicKey(9, Mode.major));
     });
   });
+
+  test('tomas parciales: se guardan y no cuentan como toma principal', () {
+    final main = Take(id: 't1', recordedAt: DateTime(2026), events: [MidiEvent.noteOn(0, 60, velocity: 33)]);
+    final part = Take(
+      id: 't2',
+      recordedAt: DateTime(2026),
+      events: [MidiEvent.noteOn(0, 64, velocity: 101)],
+      partial: true,
+      label: 'Coro, regrabado',
+    );
+    final song = Song(id: 's', title: 'x', createdAt: DateTime(2026), updatedAt: DateTime(2026), takes: [part, main]);
+    expect(song.mainTake, same(main));
+    final back = Song.fromJson(jsonDecode(jsonEncode(song.toJson())) as Map<String, dynamic>);
+    expect(back.takes.first.partial, isTrue);
+    expect(back.takes.first.label, 'Coro, regrabado');
+    expect(back.takes.first.events.single.data2, 101);
+    expect(back.mainTake!.id, 't1');
+  });
 }

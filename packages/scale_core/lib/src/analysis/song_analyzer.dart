@@ -73,7 +73,7 @@ class SongAnalyzer {
   /// Reemplaza las secciones por las partes detectadas. Puede partir acordes
   /// sostenidos entre dos vueltas, así que las modulaciones se recalculan.
   static void detectParts(Song song) {
-    final take = song.takes.length == 1 ? song.takes.single : null;
+    final take = song.takes.where((t) => !t.partial).length == 1 ? song.mainTake : null;
     final silences = take == null ? null : PartDetector.silencesBefore(take, song.chords);
     final detected = PartDetector.detect(song.chords, silenceBefore: silences);
     final split = detected.chords.length != song.chords.length;

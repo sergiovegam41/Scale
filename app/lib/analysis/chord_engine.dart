@@ -43,6 +43,9 @@ class ChordEngine extends ChangeNotifier {
 
   /// Semitonos que hay que restar a lo que llega para obtener las figuras.
   int get _inputShift => settings.pianoSendsTransposed ? -_layer : 0;
+
+  /// Lo que hay que restarle a una toma para volver a la tonalidad original.
+  int get inputTranspose => -_inputShift;
   late final StreamSubscription<MidiInput> _sub;
   Timer? _closeTimer;
   Timer? _clockTimer;
@@ -93,7 +96,7 @@ class ChordEngine extends ChangeNotifier {
       id: Song.newId(),
       recordedAt: _takeStartedAt!,
       events: events,
-      inputTranspose: -_inputShift,
+      inputTranspose: inputTranspose,
     );
   }
 

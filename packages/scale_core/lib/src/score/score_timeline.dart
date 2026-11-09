@@ -24,6 +24,7 @@ class PlayedNote {
     required this.eventId,
     required this.part,
     required this.staff,
+    this.velocity = ScoreDynamics.defaultVelocity,
   });
 
   final int start;
@@ -33,6 +34,9 @@ class PlayedNote {
   final String eventId;
   final int part;
   final int staff;
+
+  /// Fuerza con que se toca (1..127): la grabada, o la de las dinámicas.
+  final int velocity;
 
   /// Ids de todas las cabezas que forman esta nota (la primera y sus ligadas).
   final List<String> tiedIds = [];
@@ -67,6 +71,7 @@ class ScoreTimeline {
       // Notas abiertas que esperan su continuación ligada, por altura.
       final open = <int, PlayedNote>{};
       final byMeasure = _eventsByMeasure(score, part);
+      final dynamics = ScoreDynamics(part.directions);
       for (final pm in order) {
         final m = score.measures[pm.index];
         for (final e in byMeasure[pm.index]) {
@@ -90,6 +95,7 @@ class ScoreTimeline {
               eventId: e.id,
               part: pi,
               staff: e.staff,
+              velocity: n.velocity ?? dynamics.velocityAt(e.tick),
             )..tiedIds.add(n.id);
             notes.add(played);
             if (n.tieStart) {
@@ -228,4 +234,70 @@ class _TempoPoint {
   final double microsPerTick;
 
   double microsAt(int t) => micros + (t - tick) * microsPerTick;
+}
+
+/// Fuerza de cada nota según las dinámicas escritas de una parte: el nivel
+/// de la última marca (p, mf, f…), los acentos (sfz) en su nota y los
+/// reguladores, que pasan poco a poco de un nivel al siguiente.
+class ScoreDynamics {
+  ScoreDynamics(List<ScoreDirection> directions) {
+    final sorted = [...directions]..sort((a, b) => a.tick.compareTo(b.tick));
+    int? wedgeStart;
+    String? wedgeKind;
+    for (final d in sorted) {
+      if (d.kind == DirectionKind.dynamic) {
+        final v = ScoreDirection.velocities[d.value];
+        if (v == null) continue;
+        if (ScoreDirection.accents.contains(d.value)) {
+          _accents[d.tick] = v;
+        } else {
+          _levels.add((d.tick, v));
+        }
+      } else if (d.value == 'stop') {
+        if (wedgeStart != null && d.tick > wedgeStart) _wedges.add((wedgeStart, d.tick, wedgeKind == 'crescendo'));
+        wedgeStart = null;
+      } else {
+        wedgeStart = d.tick;
+        wedgeKind = d.value;
+      }
+    }
+  }
+
+  /// Sin dinámicas escritas: mezzoforte.
+  static const int defaultVelocity = 80;
+
+  final List<(int, int)> _levels = [];
+  final Map<int, int> _accents = {};
+  final List<(int, int, bool)> _wedges = [];
+
+  int _levelAt(int tick) {
+    var v = defaultVelocity;
+    for (final (t, level) in _levels) {
+      if (t > tick) break;
+      v = level;
+    }
+    return v;
+  }
+
+  int velocityAt(int tick) {
+    final accent = _accents[tick];
+    if (accent != null) return accent;
+    for (final (start, stop, crescendo) in _wedges) {
+      if (tick < start || tick >= stop) continue;
+      final from = _levelAt(start);
+      // Destino: la marca que llega al terminar el regulador, o un escalón.
+      int? to;
+      for (final (t, level) in _levels) {
+        if (t > stop + ticksPerQuarter * 4) break;
+        if (t >= stop) {
+          to = level;
+          break;
+        }
+      }
+      to ??= (from + (crescendo ? 24 : -24)).clamp(16, 120);
+      final f = (tick - start) / (stop - start);
+      return (from + (to - from) * f).round().clamp(1, 127);
+    }
+    return _levelAt(tick);
+  }
 }

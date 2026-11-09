@@ -36,7 +36,8 @@ class SongKeyPanel extends StatelessWidget {
     final (status, color) = song.keyManual
         ? ('Manual', scheme.tertiary)
         : KeyPanel.status(confidence ?? 0, scheme);
-    final takeMicros = song.takes.fold<int>(0, (a, t) => a + t.durationMicros);
+    final takeMicros = song.mainTake?.durationMicros ?? 0;
+    final partialTakes = song.takes.where((t) => t.partial).length;
 
     return Card(
       child: Padding(
@@ -161,7 +162,8 @@ class SongKeyPanel extends StatelessWidget {
             const Spacer(),
             Text(
               '${song.chords.length} acordes · ${song.sections.length} secciones'
-              '${takeMicros > 0 ? ' · ${duration(takeMicros)}' : ''}',
+              '${takeMicros > 0 ? ' · ${duration(takeMicros)}' : ''}'
+              '${partialTakes == 0 ? '' : ' · $partialTakes ${partialTakes == 1 ? 'toma de sección' : 'tomas de secciones'}'}',
               style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
             ),
             const SizedBox(height: 8),

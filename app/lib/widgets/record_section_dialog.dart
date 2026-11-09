@@ -3,6 +3,7 @@ import 'package:scale_core/scale_core.dart';
 
 import '../analysis/chord_engine.dart';
 import '../midi/midi_service.dart';
+import '../midi/take_capture.dart';
 import '../settings.dart';
 import 'chord_cell.dart';
 import 'repeat_badge.dart';
@@ -10,12 +11,15 @@ import 'repeat_badge.dart';
 /// Una sección tocada en el piano: una vuelta y cuántas veces se tocó (y,
 /// si es nueva, cómo se llama).
 class RecordedSection {
-  const RecordedSection(this.pass, this.repeats, {this.label, this.kind = SectionKind.other});
+  const RecordedSection(this.pass, this.repeats, {this.label, this.kind = SectionKind.other, this.take});
 
   final List<ChordEvent> pass;
   final int repeats;
   final String? label;
   final SectionKind kind;
+
+  /// Lo tocado en bruto, con su fuerza y tiempos (todas las vueltas).
+  final Take? take;
 }
 
 /// Regrabar una sección con el piano: se escriben los acordes mientras se
@@ -87,17 +91,22 @@ class _RecordDialogState extends State<_RecordDialog> {
   late final TextEditingController label = TextEditingController(text: widget.newLabel ?? '');
   SectionKind kind = SectionKind.other;
 
+  /// La toma en bruto de lo que se toca en este diálogo.
+  late final TakeCapture capture = TakeCapture(widget.piano);
+
   int get _now => widget.midi.now.inMicroseconds;
 
   @override
   void initState() {
     super.initState();
     widget.piano.addListener(_onPiano);
+    capture.active = true; // se crea ya: desde aquí se guarda todo lo tocado
   }
 
   @override
   void dispose() {
     widget.piano.removeListener(_onPiano);
+    capture.dispose();
     label.dispose();
     super.dispose();
   }
@@ -107,6 +116,7 @@ class _RecordDialogState extends State<_RecordDialog> {
   void _restart() => setState(() {
         _start = _now;
         _removed.clear();
+        capture.restart();
       });
 
   List<DetectedChord> get _captured => [
@@ -267,6 +277,7 @@ class _RecordDialogState extends State<_RecordDialog> {
                       grouped ? repeats : 1,
                       label: name,
                       kind: kind,
+                      take: capture.take(widget.title),
                     ),
                   );
                 },

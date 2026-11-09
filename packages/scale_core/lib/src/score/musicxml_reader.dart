@@ -137,6 +137,10 @@ class MusicXmlReader {
             for (final (mi, c) in p.chords)
               if (mi < measures.length) c..tick += measures[mi].tick,
           ],
+          directions: [
+            for (final (mi, d) in p.directions)
+              if (mi < measures.length) d..tick += measures[mi].tick,
+          ]..sort((a, b) => a.tick.compareTo(b.tick)),
         ),
     ];
 
@@ -212,6 +216,7 @@ class _PartParse {
   /// Eventos con el pulso relativo al inicio de su compás (índice, evento).
   final List<(int, ScoreEvent)> events = [];
   final List<(int, ChordSymbol)> chords = [];
+  final List<(int, ScoreDirection)> directions = [];
   int staves = 1;
   final Map<int, Clef> clefs = {};
 
@@ -263,6 +268,9 @@ class _PartParse {
           case 'direction':
             final tempo = _directionTempo(child);
             if (tempo != null && (info.tempo == null || pos == 0)) info.tempo = tempo;
+            for (final d in _dynamics(child, pos)) {
+              directions.add((mi, d));
+            }
           case 'sound':
             final tempo = double.tryParse(child.getAttribute('tempo') ?? '');
             if (tempo != null && tempo > 0) info.tempo ??= tempo;
@@ -338,7 +346,10 @@ class _PartParse {
         ...n.findElements('tie').map((t) => t.getAttribute('type')),
         ...n.findAllElements('tied').map((t) => t.getAttribute('type')),
       ];
+      // Fuerza nota a nota: porcentaje de un forte (90), como en MusicXML.
+      final dynamics = double.tryParse(n.getAttribute('dynamics') ?? '');
       note = ScoreNote(
+        velocity: dynamics == null ? null : (dynamics * 90 / 100).round().clamp(1, 127),
         id: n.getAttribute('id') ?? 'n${index}_${_counter++}',
         midi: ((octave + 1) * 12 + _letterPitch[letter] + alter).clamp(0, 127),
         spelling: SpelledNote(letter, alter),
@@ -386,6 +397,30 @@ class _PartParse {
       tuplet: tuplet,
       grace: grace,
     );
+  }
+
+  /// Marcas de dinámica (p, mf…) y reguladores de una `<direction>`.
+  List<ScoreDirection> _dynamics(XmlElement d, int pos) {
+    final out = <ScoreDirection>[];
+    final tick = math.max(0, pos + _ticks(d.getElement('offset')?.innerText));
+    final staff = int.tryParse(d.getElement('staff')?.innerText.trim() ?? '') ?? 1;
+    for (final type in d.findElements('direction-type')) {
+      for (final dyn in type.findElements('dynamics')) {
+        for (final mark in dyn.childElements) {
+          final value = mark.name.local == 'other-dynamics' ? mark.innerText.trim() : mark.name.local;
+          if (value.isNotEmpty) {
+            out.add(ScoreDirection(tick: tick, kind: DirectionKind.dynamic, value: value, staff: staff));
+          }
+        }
+      }
+      for (final w in type.findElements('wedge')) {
+        final t = w.getAttribute('type');
+        if (t == 'crescendo' || t == 'diminuendo' || t == 'stop') {
+          out.add(ScoreDirection(tick: tick, kind: DirectionKind.wedge, value: t!, staff: staff));
+        }
+      }
+    }
+    return out;
   }
 
   double? _directionTempo(XmlElement d) {

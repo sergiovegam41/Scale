@@ -88,6 +88,8 @@ class Take {
     required this.recordedAt,
     required this.events,
     this.inputTranspose = 0,
+    this.partial = false,
+    this.label,
   });
 
   factory Take.fromJson(Map<String, dynamic> json) => Take(
@@ -95,7 +97,17 @@ class Take {
         recordedAt: DateTime.parse(json['recordedAt'] as String).toLocal(),
         events: [for (final e in json['events'] as List) MidiEvent.fromJson(e as List)],
         inputTranspose: json['inputTranspose'] as int? ?? 0,
+        partial: json['partial'] as bool? ?? false,
+        label: json['label'] as String?,
       );
+
+  /// Toma de una parte (sección grabada o regrabada en el editor), no de la
+  /// canción entera: se guarda con todos sus matices pero los tiempos de los
+  /// acordes no se refieren a ella.
+  final bool partial;
+
+  /// Qué se grabó, para mostrarlo ("Coro, regrabado").
+  final String? label;
 
   final String id;
   final DateTime recordedAt;
@@ -113,6 +125,8 @@ class Take {
         'id': id,
         'recordedAt': recordedAt.toUtc().toIso8601String(),
         if (inputTranspose != 0) 'inputTranspose': inputTranspose,
+        if (partial) 'partial': true,
+        if (label != null) 'label': label,
         'events': [for (final e in events) e.toJson()],
       };
 }
@@ -346,6 +360,15 @@ class Song {
   DateTime updatedAt;
   SongSource source;
   final List<Take> takes;
+
+  /// La toma de la canción entera (la de "Grabar"), si la hay; las tomas
+  /// parciales de secciones no cuentan.
+  Take? get mainTake {
+    for (final t in takes) {
+      if (!t.partial) return t;
+    }
+    return null;
+  }
   final List<ChordEvent> chords;
 
   /// Tonalidad principal (la original: la de las figuras que se tocan).

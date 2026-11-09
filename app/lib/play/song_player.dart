@@ -17,7 +17,7 @@ class SongPlayer extends ChangeNotifier {
   bool soundOnPiano = true;
 
   bool get canPlay => take != null && take!.events.isNotEmpty;
-  Take? get take => song.takes.isEmpty ? null : song.takes.first;
+  Take? get take => song.mainTake;
   int get durationMicros => take?.durationMicros ?? 0;
 
   bool playing = false;

@@ -175,7 +175,7 @@ class ScorePlayer extends ChangeNotifier {
   void _on(PlayedNote n) {
     if (_muted(n) || midi.connected == null) return;
     if (_sounding.contains(n.midi)) midi.send([0x80, n.midi, 0]);
-    midi.send([0x90, n.midi, 78]);
+    midi.send([0x90, n.midi, n.velocity.clamp(1, 127)]);
     _sounding.add(n.midi);
   }
 

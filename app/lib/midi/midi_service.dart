@@ -66,6 +66,10 @@ class MidiService extends ChangeNotifier {
 
   Stream<MidiInput> get events => _events.stream;
 
+  /// Solo para pruebas: entrega [input] como si viniera del piano.
+  @visibleForTesting
+  void debugInject(MidiInput input) => _events.add(input);
+
   /// Reloj con el que se marcan los mensajes entrantes.
   Duration get now => _clock.elapsed;
 

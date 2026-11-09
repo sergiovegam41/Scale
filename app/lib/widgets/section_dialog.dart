@@ -2,18 +2,22 @@ import 'package:flutter/material.dart';
 import 'package:scale_core/scale_core.dart';
 
 import '../analysis/chord_engine.dart';
+import '../midi/take_capture.dart';
 import '../settings.dart';
 import 'chord_cell.dart';
 import 'repeat_badge.dart';
 
 /// Lo que se escribió en el editor de una sección.
 class SectionEdit {
-  const SectionEdit({required this.label, required this.kind, required this.note, required this.line});
+  const SectionEdit({required this.label, required this.kind, required this.note, required this.line, this.take});
 
   final String label;
   final SectionKind kind;
   final String note;
   final ChordLine line;
+
+  /// Lo tocado en el piano mientras se dictaba, en bruto (si se usó).
+  final Take? take;
 }
 
 /// Una sección completa en un solo diálogo: nombre, acordes como texto
@@ -82,6 +86,9 @@ class _SectionDialogState extends State<_SectionDialog> {
 
   /// Escribir solo lo que se toca en el piano.
   bool listening = false;
+
+  /// Toma en bruto de lo dictado con el piano (solo mientras se escucha).
+  late final TakeCapture? capture = widget.piano == null ? null : TakeCapture(widget.piano!, active: false);
   int _seenAttacks = 0;
   String? _lastToken;
 
@@ -101,6 +108,7 @@ class _SectionDialogState extends State<_SectionDialog> {
   @override
   void dispose() {
     widget.piano?.removeListener(_onPiano);
+    capture?.dispose();
     label.dispose();
     note.dispose();
     chords.dispose();
@@ -163,7 +171,13 @@ class _SectionDialogState extends State<_SectionDialog> {
     if (!_valid) return;
     Navigator.pop(
       context,
-      SectionEdit(label: label.text.trim(), kind: kind, note: note.text.trim(), line: line),
+      SectionEdit(
+        label: label.text.trim(),
+        kind: kind,
+        note: note.text.trim(),
+        line: line,
+        take: capture?.take('${label.text.trim()}, dictada con el piano'),
+      ),
     );
   }
 
@@ -303,6 +317,7 @@ class _SectionDialogState extends State<_SectionDialog> {
                   label: Text(listening ? 'Escribiendo lo que tocas en el piano…' : 'Escribir lo que toco en el piano'),
                   onSelected: (v) => setState(() {
                     listening = v;
+                    capture?.active = v;
                     _seenAttacks = widget.piano!.attacks;
                     _lastToken = null;
                   }),

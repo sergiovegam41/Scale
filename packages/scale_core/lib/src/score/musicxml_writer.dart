@@ -54,6 +54,10 @@ class _PartWriter {
     for (final c in part.chords) {
       chordsBy[score.measureAt(c.tick)].add(c);
     }
+    final dirsBy = [for (final _ in score.measures) <ScoreDirection>[]];
+    for (final d in part.directions) {
+      dirsBy[score.measureAt(d.tick)].add(d);
+    }
     b.element('part', attributes: {'id': part.id}, nest: () {
       for (final (mi, m) in score.measures.indexed) {
         final prev = mi == 0 ? null : score.measures[mi - 1];
@@ -63,6 +67,9 @@ class _PartWriter {
           if (m.tempo != null && part == score.parts.first) _tempo(m.tempo!);
           for (final c in chordsBy[mi]) {
             _harmony(c, m);
+          }
+          for (final d in dirsBy[mi]) {
+            _direction(d, m);
           }
           _events(m, byMeasure[mi]);
           _rightBarline(m, mi + 1 < score.measures.length ? score.measures[mi + 1] : null);
@@ -137,6 +144,30 @@ class _PartWriter {
         });
       });
       b.element('sound', attributes: {'tempo': value});
+    });
+  }
+
+  /// Dinámica o regulador, con `<offset>` desde el inicio del compás (el
+  /// cursor de escritura está ahí: va antes de las notas).
+  void _direction(ScoreDirection d, Measure m) {
+    final wedge = d.kind == DirectionKind.wedge;
+    b.element('direction', attributes: {'placement': 'below'}, nest: () {
+      b.element('direction-type', nest: () {
+        if (wedge) {
+          b.element('wedge', attributes: {'type': d.value});
+        } else {
+          b.element('dynamics', nest: () {
+            if (ScoreDirection.velocities.containsKey(d.value)) {
+              b.element(d.value);
+            } else {
+              b.element('other-dynamics', nest: d.value);
+            }
+          });
+        }
+      });
+      final offset = d.tick - m.tick;
+      if (offset > 0) b.element('offset', nest: '$offset');
+      if (part.staves > 1) b.element('staff', nest: '${d.staff}');
     });
   }
 
@@ -237,7 +268,11 @@ class _PartWriter {
     final tupletMark = tuplet.mark(e, written.$1);
     final notes = e.notes.isEmpty ? <ScoreNote?>[null] : e.notes;
     for (final (i, n) in notes.indexed) {
-      b.element('note', attributes: {'id': n?.id ?? e.id}, nest: () {
+      final velocity = n?.velocity;
+      b.element('note', attributes: {
+        'id': n?.id ?? e.id,
+        if (velocity != null) 'dynamics': (velocity * 100 / 90).toStringAsFixed(1),
+      }, nest: () {
         if (e.grace) b.element('grace');
         if (i > 0) b.element('chord');
         if (n == null) {

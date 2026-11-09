@@ -298,6 +298,7 @@ class _SongEditorState extends State<SongEditor> {
     );
     if (result == null || !mounted) return;
     await _mutate(() {
+      _keepTake(result.take);
       section
         ..label = result.label
         ..kind = result.kind
@@ -321,6 +322,7 @@ class _SongEditorState extends State<SongEditor> {
     );
     if (result == null || !mounted) return;
     await _mutate(() {
+      _keepTake(result.take);
       final section = song.newSection(label: result.label, kind: result.kind)
         ..note = result.note.isEmpty ? null : result.note;
       song.addSection(section, result.line.chords, repeats: result.line.repeats, at: at);
@@ -347,7 +349,10 @@ class _SongEditorState extends State<SongEditor> {
       ),
     );
     if (result == null || !mounted) return;
-    await _mutate(() => song.replacePass(occurrence, result.pass, repeats: result.repeats));
+    await _mutate(() {
+      _keepTake(result.take);
+      song.replacePass(occurrence, result.pass, repeats: result.repeats);
+    });
     _toast('Sección regrabada', undo: true);
   }
 
@@ -366,14 +371,22 @@ class _SongEditorState extends State<SongEditor> {
       ),
     );
     if (result == null || !mounted) return;
-    await _mutate(
-      () => song.addSection(
+    await _mutate(() {
+      _keepTake(result.take);
+      song.addSection(
         song.newSection(label: result.label ?? song.nextPartLabel(), kind: result.kind),
         result.pass,
         repeats: result.repeats,
         at: at,
-      ),
-    );
+      );
+    });
+  }
+
+  /// Las secciones tocadas en el piano guardan también su toma en bruto (con
+  /// la fuerza de cada nota), aunque de ella solo se usen los acordes. Se
+  /// conserva aunque se deshaga el cambio: es un registro de lo tocado.
+  void _keepTake(Take? take) {
+    if (take != null && !song.takes.any((t) => t.id == take.id)) song.takes.add(take);
   }
 
   Future<void> _sectionAction(int occurrence, String action) async {
