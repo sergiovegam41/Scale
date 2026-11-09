@@ -39,8 +39,7 @@ class KeySignature {
   final int fifths;
 
   /// Letras alteradas, en el orden en que se escriben.
-  List<int> get letters =>
-      fifths >= 0 ? sharpOrder.take(fifths).toList() : flatOrder.take(-fifths).toList();
+  List<int> get letters => fifths >= 0 ? sharpOrder.take(fifths).toList() : flatOrder.take(-fifths).toList();
 
   /// Alteración que la armadura da a [letter] (0 = C … 6 = B).
   int accidentalFor(int letter) => letters.contains(letter) ? (fifths > 0 ? 1 : -1) : 0;
@@ -100,7 +99,8 @@ class StaffNote {
   String label([Notation notation = Notation.american]) => '${spelling.name(notation)}$octave';
 
   @override
-  String toString() => 'StaffNote(${label()} $clef step $step${accidental == null ? '' : ' acc $accidental'}'
+  String toString() =>
+      'StaffNote(${label()} $clef step $step${accidental == null ? '' : ' acc $accidental'}'
       '${shifted ? ' shifted' : ''})';
 }
 
@@ -136,7 +136,10 @@ class ChordStaff {
   final List<StaffNote> notes;
   final KeySignature signature;
 
-  List<StaffNote> on(StaffClef clef) => [for (final n in notes) if (n.clef == clef) n];
+  List<StaffNote> on(StaffClef clef) => [
+    for (final n in notes)
+      if (n.clef == clef) n,
+  ];
 
   /// Cuántas columnas de alteraciones usa el pentagrama más ancho.
   int get accidentalColumns {
@@ -200,8 +203,7 @@ class ChordStaff {
   }
 
   /// Octava de la letra escrita: Si#3 suena como Do4 pero se escribe en la 3.
-  static int octaveOf(int midi, SpelledNote s) =>
-      ((midi - s.accidental - _letterPitch[s.letter]) ~/ 12) - 1;
+  static int octaveOf(int midi, SpelledNote s) => ((midi - s.accidental - _letterPitch[s.letter]) ~/ 12) - 1;
 
   static int _diatonic(int midi, SpelledNote s) => octaveOf(midi, s) * 7 + s.letter;
 
@@ -251,7 +253,10 @@ class ChordStaff {
     // Columnas: se colocan de fuera hacia dentro (arriba, abajo, la segunda
     // de arriba…) en la columna más cercana que no choque (menos de una sexta).
     final columns = List.filled(notes.length, 0);
-    final withAcc = [for (var i = 0; i < notes.length; i++) if (accidentals[i] != null) i];
+    final withAcc = [
+      for (var i = 0; i < notes.length; i++)
+        if (accidentals[i] != null) i,
+    ];
     final order = <int>[];
     var lo = 0;
     var hi = withAcc.length - 1;

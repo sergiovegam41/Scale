@@ -28,7 +28,15 @@ void main() {
       expect(natural.romans, ['i', 'ii°', '♭III', 'iv', 'v', '♭VI', '♭VII']);
       final harmonic = Scale(9, ScaleShape.harmonicMinor);
       expect(harmonic.notes.map((pc) => harmonic.spell(pc).name()), ['A', 'B', 'C', 'D', 'E', 'F', 'G#']);
-      expect(harmonic.triads.map((c) => fmt.format(c, spell: harmonic.spell)), ['Am', 'Bdim', 'Caug', 'Dm', 'E', 'F', 'G#dim']);
+      expect(harmonic.triads.map((c) => fmt.format(c, spell: harmonic.spell)), [
+        'Am',
+        'Bdim',
+        'Caug',
+        'Dm',
+        'E',
+        'F',
+        'G#dim',
+      ]);
       expect(harmonic.romans, ['i', 'ii°', '♭III+', 'iv', 'V', '♭VI', 'vii°']);
     });
 

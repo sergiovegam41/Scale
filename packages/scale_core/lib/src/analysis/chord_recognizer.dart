@@ -73,12 +73,7 @@ class ChordRecognizer {
   /// [bassOnly]: la nota del bajo no se repite arriba. Si además no es nota
   /// de la tríada, se cifra como bajo con barra (C/B, G/A) y no como
   /// extensión (Cmaj7/B, Gadd9/A).
-  ChordRecognition? recognizePitchClasses(
-    Set<int> pcs, {
-    int? bass,
-    bool bassOnly = false,
-    ChordPrior? prior,
-  }) {
+  ChordRecognition? recognizePitchClasses(Set<int> pcs, {int? bass, bool bassOnly = false, ChordPrior? prior}) {
     if (pcs.length < 2) return null;
     final scored = <(Chord, double)>[];
     for (final root in pcs) {

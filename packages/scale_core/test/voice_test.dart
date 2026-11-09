@@ -78,8 +78,18 @@ void main() {
     test('una melodía en G mayor', () {
       // "Cuán grande es Él"-like: G A B C D B G, D C B A G.
       final notes = sing([
-        (67, 0.6), (69, 0.4), (71, 0.6), (72, 0.4), (74, 0.8), (71, 0.4), (67, 0.8),
-        (74, 0.4), (72, 0.4), (71, 0.4), (69, 0.4), (67, 1.0),
+        (67, 0.6),
+        (69, 0.4),
+        (71, 0.6),
+        (72, 0.4),
+        (74, 0.8),
+        (71, 0.4),
+        (67, 0.8),
+        (74, 0.4),
+        (72, 0.4),
+        (71, 0.4),
+        (69, 0.4),
+        (67, 1.0),
       ]);
       final estimate = MelodyKeyEstimator.estimate(notes);
       expect(estimate.key, MusicKey(7, Mode.major));
@@ -95,18 +105,38 @@ void main() {
     test('una melodía en menor', () {
       // A menor: A C E D C B A, E G# A.
       final notes = sing([
-        (69, 0.6), (72, 0.4), (76, 0.6), (74, 0.4), (72, 0.4), (71, 0.4), (69, 0.9),
-        (64, 0.4), (68, 0.4), (69, 1.0),
+        (69, 0.6),
+        (72, 0.4),
+        (76, 0.6),
+        (74, 0.4),
+        (72, 0.4),
+        (71, 0.4),
+        (69, 0.9),
+        (64, 0.4),
+        (68, 0.4),
+        (69, 1.0),
       ]);
       expect(MelodyKeyEstimator.estimate(notes).key, MusicKey(9, Mode.minor));
     });
 
     test('más notas → más seguridad', () {
       final short = MelodyKeyEstimator.estimate(sing([(67, 0.4), (71, 0.4)]));
-      final long = MelodyKeyEstimator.estimate(sing([
-        (67, 0.6), (69, 0.4), (71, 0.6), (72, 0.4), (74, 0.8), (71, 0.4), (67, 0.8),
-        (74, 0.4), (72, 0.4), (71, 0.4), (69, 0.4), (67, 1.0),
-      ]));
+      final long = MelodyKeyEstimator.estimate(
+        sing([
+          (67, 0.6),
+          (69, 0.4),
+          (71, 0.6),
+          (72, 0.4),
+          (74, 0.8),
+          (71, 0.4),
+          (67, 0.8),
+          (74, 0.4),
+          (72, 0.4),
+          (71, 0.4),
+          (69, 0.4),
+          (67, 1.0),
+        ]),
+      );
       expect(long.confidence, greaterThan(short.confidence));
     });
   });

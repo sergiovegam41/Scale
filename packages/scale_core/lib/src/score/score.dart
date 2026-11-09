@@ -127,19 +127,19 @@ class Measure {
   });
 
   factory Measure.fromJson(Map<String, dynamic> j) => Measure(
-        number: j['n'] as String,
-        tick: j['t'] as int,
-        length: j['len'] as int,
-        time: TimeSignature.fromJson(j['time'] as List<dynamic>),
-        fifths: j['fifths'] as int,
-        minor: j['minor'] as bool? ?? false,
-        tempo: (j['tempo'] as num?)?.toDouble(),
-        repeatStart: j['repStart'] as bool? ?? false,
-        repeatEnd: j['repEnd'] as bool? ?? false,
-        repeatTimes: j['repTimes'] as int? ?? 2,
-        endings: [for (final e in (j['endings'] as List<dynamic>? ?? const [])) e as int],
-        implicit: j['implicit'] as bool? ?? false,
-      );
+    number: j['n'] as String,
+    tick: j['t'] as int,
+    length: j['len'] as int,
+    time: TimeSignature.fromJson(j['time'] as List<dynamic>),
+    fifths: j['fifths'] as int,
+    minor: j['minor'] as bool? ?? false,
+    tempo: (j['tempo'] as num?)?.toDouble(),
+    repeatStart: j['repStart'] as bool? ?? false,
+    repeatEnd: j['repEnd'] as bool? ?? false,
+    repeatTimes: j['repTimes'] as int? ?? 2,
+    endings: [for (final e in (j['endings'] as List<dynamic>? ?? const [])) e as int],
+    implicit: j['implicit'] as bool? ?? false,
+  );
 
   /// Número como se escribe (puede ser "12a" o "X1").
   final String number;
@@ -172,19 +172,19 @@ class Measure {
   int get end => tick + length;
 
   Map<String, dynamic> toJson() => {
-        'n': number,
-        't': tick,
-        'len': length,
-        'time': time.toJson(),
-        'fifths': fifths,
-        if (minor) 'minor': true,
-        if (tempo != null) 'tempo': tempo,
-        if (repeatStart) 'repStart': true,
-        if (repeatEnd) 'repEnd': true,
-        if (repeatEnd && repeatTimes != 2) 'repTimes': repeatTimes,
-        if (endings.isNotEmpty) 'endings': endings,
-        if (implicit) 'implicit': true,
-      };
+    'n': number,
+    't': tick,
+    'len': length,
+    'time': time.toJson(),
+    'fifths': fifths,
+    if (minor) 'minor': true,
+    if (tempo != null) 'tempo': tempo,
+    if (repeatStart) 'repStart': true,
+    if (repeatEnd) 'repEnd': true,
+    if (repeatEnd && repeatTimes != 2) 'repTimes': repeatTimes,
+    if (endings.isNotEmpty) 'endings': endings,
+    if (implicit) 'implicit': true,
+  };
 }
 
 /// Una nota escrita: altura que suena, ortografía y ligaduras de prolongación.
@@ -200,14 +200,14 @@ class ScoreNote {
   });
 
   factory ScoreNote.fromJson(Map<String, dynamic> j) => ScoreNote(
-        id: j['id'] as String,
-        midi: j['m'] as int,
-        spelling: SpelledNote(j['l'] as int, j['a'] as int? ?? 0),
-        octave: j['o'] as int,
-        tieStart: j['ts'] as bool? ?? false,
-        tieStop: j['te'] as bool? ?? false,
-        velocity: j['v'] as int?,
-      );
+    id: j['id'] as String,
+    midi: j['m'] as int,
+    spelling: SpelledNote(j['l'] as int, j['a'] as int? ?? 0),
+    octave: j['o'] as int,
+    tieStart: j['ts'] as bool? ?? false,
+    tieStop: j['te'] as bool? ?? false,
+    velocity: j['v'] as int?,
+  );
 
   /// Estable: no cambia al guardar ni al editar otras notas.
   final String id;
@@ -229,15 +229,15 @@ class ScoreNote {
   int? velocity;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'm': midi,
-        'l': spelling.letter,
-        if (spelling.accidental != 0) 'a': spelling.accidental,
-        'o': octave,
-        if (tieStart) 'ts': true,
-        if (tieStop) 'te': true,
-        if (velocity != null) 'v': velocity,
-      };
+    'id': id,
+    'm': midi,
+    'l': spelling.letter,
+    if (spelling.accidental != 0) 'a': spelling.accidental,
+    'o': octave,
+    if (tieStart) 'ts': true,
+    if (tieStop) 'te': true,
+    if (velocity != null) 'v': velocity,
+  };
 }
 
 /// Un evento en una voz: nota, acorde (varias notas a la vez) o silencio.
@@ -252,23 +252,25 @@ class ScoreEvent {
     this.type,
     this.dots = 0,
     this.tuplet,
+    this.tupletSpan,
     this.grace = false,
     this.beams = const [],
   });
 
   factory ScoreEvent.fromJson(Map<String, dynamic> j) => ScoreEvent(
-        id: j['id'] as String,
-        tick: j['t'] as int,
-        duration: j['d'] as int,
-        staff: j['s'] as int? ?? 1,
-        voice: j['v'] as int? ?? 1,
-        notes: [for (final n in (j['n'] as List<dynamic>? ?? const [])) ScoreNote.fromJson(n as Map<String, dynamic>)],
-        type: j['ty'] == null ? null : NoteType.fromMusicXml(j['ty'] as String),
-        dots: j['dots'] as int? ?? 0,
-        tuplet: j['tup'] == null ? null : (((j['tup'] as List)[0] as int), ((j['tup'] as List)[1] as int)),
-        grace: j['g'] as bool? ?? false,
-        beams: [for (final b in (j['b'] as List<dynamic>? ?? const [])) b as String],
-      );
+    id: j['id'] as String,
+    tick: j['t'] as int,
+    duration: j['d'] as int,
+    staff: j['s'] as int? ?? 1,
+    voice: j['v'] as int? ?? 1,
+    notes: [for (final n in (j['n'] as List<dynamic>? ?? const [])) ScoreNote.fromJson(n as Map<String, dynamic>)],
+    type: j['ty'] == null ? null : NoteType.fromMusicXml(j['ty'] as String),
+    dots: j['dots'] as int? ?? 0,
+    tuplet: j['tup'] == null ? null : (((j['tup'] as List)[0] as int), ((j['tup'] as List)[1] as int)),
+    tupletSpan: j['tsp'] as int?,
+    grace: j['g'] as bool? ?? false,
+    beams: [for (final b in (j['b'] as List<dynamic>? ?? const [])) b as String],
+  );
 
   final String id;
 
@@ -291,6 +293,11 @@ class ScoreEvent {
 
   /// Grupo irregular: (notas reales, notas normales), p. ej. (3, 2) en un tresillo.
   (int, int)? tuplet;
+
+  /// Lo que dura (en pulsos reales) el grupo irregular que empieza en este
+  /// evento, si no es el habitual (p. ej. un tresillo de una negra que
+  /// empieza con negra de tresillo). Null: se deduce de la figura.
+  int? tupletSpan;
   bool grace;
 
   /// Barras de corchea por nivel, como en MusicXML: 'begin', 'continue',
@@ -302,18 +309,19 @@ class ScoreEvent {
   int get end => tick + duration;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        't': tick,
-        'd': duration,
-        if (staff != 1) 's': staff,
-        if (voice != 1) 'v': voice,
-        if (notes.isNotEmpty) 'n': [for (final n in notes) n.toJson()],
-        if (type != null) 'ty': type!.musicXml,
-        if (dots != 0) 'dots': dots,
-        if (tuplet != null) 'tup': [tuplet!.$1, tuplet!.$2],
-        if (grace) 'g': true,
-        if (beams.isNotEmpty) 'b': beams,
-      };
+    'id': id,
+    't': tick,
+    'd': duration,
+    if (staff != 1) 's': staff,
+    if (voice != 1) 'v': voice,
+    if (notes.isNotEmpty) 'n': [for (final n in notes) n.toJson()],
+    if (type != null) 'ty': type!.musicXml,
+    if (dots != 0) 'dots': dots,
+    if (tuplet != null) 'tup': [tuplet!.$1, tuplet!.$2],
+    if (tupletSpan != null) 'tsp': tupletSpan,
+    if (grace) 'g': true,
+    if (beams.isNotEmpty) 'b': beams,
+  };
 }
 
 /// Indicación de dinámica escrita: una marca (p, mf, f…) o un regulador
@@ -322,11 +330,11 @@ class ScoreDirection {
   ScoreDirection({required this.tick, required this.kind, required this.value, this.staff = 1});
 
   factory ScoreDirection.fromJson(Map<String, dynamic> j) => ScoreDirection(
-        tick: j['t'] as int,
-        kind: j['k'] == 'wedge' ? DirectionKind.wedge : DirectionKind.dynamic,
-        value: j['val'] as String,
-        staff: j['s'] as int? ?? 1,
-      );
+    tick: j['t'] as int,
+    kind: j['k'] == 'wedge' ? DirectionKind.wedge : DirectionKind.dynamic,
+    value: j['val'] as String,
+    staff: j['s'] as int? ?? 1,
+  );
 
   int tick;
   final DirectionKind kind;
@@ -338,9 +346,24 @@ class ScoreDirection {
 
   /// Fuerza MIDI típica de cada marca (la misma escala que MuseScore).
   static const Map<String, int> velocities = {
-    'pppp': 10, 'ppp': 16, 'pp': 33, 'p': 49, 'mp': 64, 'mf': 80,
-    'f': 96, 'ff': 112, 'fff': 126, 'ffff': 127,
-    'sf': 112, 'sfz': 112, 'sffz': 126, 'fz': 112, 'rf': 112, 'rfz': 112, 'fp': 96, 'sfp': 112,
+    'pppp': 10,
+    'ppp': 16,
+    'pp': 33,
+    'p': 49,
+    'mp': 64,
+    'mf': 80,
+    'f': 96,
+    'ff': 112,
+    'fff': 126,
+    'ffff': 127,
+    'sf': 112,
+    'sfz': 112,
+    'sffz': 126,
+    'fz': 112,
+    'rf': 112,
+    'rfz': 112,
+    'fp': 96,
+    'sfp': 112,
   };
 
   /// Marcas que solo acentúan una nota, no cambian el nivel general.
@@ -362,12 +385,7 @@ class ScoreDirection {
     return best;
   }
 
-  Map<String, dynamic> toJson() => {
-        't': tick,
-        'k': kind.name,
-        'val': value,
-        if (staff != 1) 's': staff,
-      };
+  Map<String, dynamic> toJson() => {'t': tick, 'k': kind.name, 'val': value, if (staff != 1) 's': staff};
 }
 
 enum DirectionKind { dynamic, wedge }
@@ -376,8 +394,11 @@ enum DirectionKind { dynamic, wedge }
 class ChordSymbol {
   ChordSymbol({required this.tick, required this.chord, this.text});
 
-  factory ChordSymbol.fromJson(Map<String, dynamic> j) =>
-      ChordSymbol(tick: j['t'] as int, chord: Chord.fromJson(j['c'] as Map<String, dynamic>), text: j['txt'] as String?);
+  factory ChordSymbol.fromJson(Map<String, dynamic> j) => ChordSymbol(
+    tick: j['t'] as int,
+    chord: Chord.fromJson(j['c'] as Map<String, dynamic>),
+    text: j['txt'] as String?,
+  );
 
   int tick;
   Chord chord;
@@ -399,23 +420,27 @@ class ScorePart {
     List<ChordSymbol>? chords,
     List<ScoreDirection>? directions,
     this.program,
-  })  : clefs = clefs ?? [for (var i = 0; i < staves; i++) i == 0 ? Clef.treble : Clef.bass],
-        events = events ?? [],
-        chords = chords ?? [],
-        directions = directions ?? [];
+  }) : clefs = clefs ?? [for (var i = 0; i < staves; i++) i == 0 ? Clef.treble : Clef.bass],
+       events = events ?? [],
+       chords = chords ?? [],
+       directions = directions ?? [];
 
   factory ScorePart.fromJson(Map<String, dynamic> j) => ScorePart(
-        id: j['id'] as String,
-        name: j['name'] as String? ?? '',
-        staves: j['staves'] as int? ?? 1,
-        clefs: [for (final c in (j['clefs'] as List<dynamic>? ?? const [])) Clef.fromJson(c as Map<String, dynamic>)],
-        events: [for (final e in (j['events'] as List<dynamic>? ?? const [])) ScoreEvent.fromJson(e as Map<String, dynamic>)],
-        chords: [for (final c in (j['chords'] as List<dynamic>? ?? const [])) ChordSymbol.fromJson(c as Map<String, dynamic>)],
-        directions: [
-          for (final d in (j['dirs'] as List<dynamic>? ?? const [])) ScoreDirection.fromJson(d as Map<String, dynamic>),
-        ],
-        program: j['program'] as int?,
-      );
+    id: j['id'] as String,
+    name: j['name'] as String? ?? '',
+    staves: j['staves'] as int? ?? 1,
+    clefs: [for (final c in (j['clefs'] as List<dynamic>? ?? const [])) Clef.fromJson(c as Map<String, dynamic>)],
+    events: [
+      for (final e in (j['events'] as List<dynamic>? ?? const [])) ScoreEvent.fromJson(e as Map<String, dynamic>),
+    ],
+    chords: [
+      for (final c in (j['chords'] as List<dynamic>? ?? const [])) ChordSymbol.fromJson(c as Map<String, dynamic>),
+    ],
+    directions: [
+      for (final d in (j['dirs'] as List<dynamic>? ?? const [])) ScoreDirection.fromJson(d as Map<String, dynamic>),
+    ],
+    program: j['program'] as int?,
+  );
 
   final String id;
   String name;
@@ -435,29 +460,29 @@ class ScorePart {
   int? program;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'name': name,
-        'staves': staves,
-        'clefs': [for (final c in clefs) c.toJson()],
-        'events': [for (final e in events) e.toJson()],
-        if (chords.isNotEmpty) 'chords': [for (final c in chords) c.toJson()],
-        if (directions.isNotEmpty) 'dirs': [for (final d in directions) d.toJson()],
-        if (program != null) 'program': program,
-      };
+    'id': id,
+    'name': name,
+    'staves': staves,
+    'clefs': [for (final c in clefs) c.toJson()],
+    'events': [for (final e in events) e.toJson()],
+    if (chords.isNotEmpty) 'chords': [for (final c in chords) c.toJson()],
+    if (directions.isNotEmpty) 'dirs': [for (final d in directions) d.toJson()],
+    if (program != null) 'program': program,
+  };
 }
 
 /// De dónde vino una partitura: archivo, web, grabación…
 class ScoreSource {
   ScoreSource({required this.kind, this.name, this.url, this.author, DateTime? importedAt})
-      : importedAt = importedAt ?? DateTime.now();
+    : importedAt = importedAt ?? DateTime.now();
 
   factory ScoreSource.fromJson(Map<String, dynamic> j) => ScoreSource(
-        kind: j['kind'] as String,
-        name: j['name'] as String?,
-        url: j['url'] as String?,
-        author: j['author'] as String?,
-        importedAt: DateTime.tryParse(j['at'] as String? ?? ''),
-      );
+    kind: j['kind'] as String,
+    name: j['name'] as String?,
+    url: j['url'] as String?,
+    author: j['author'] as String?,
+    importedAt: DateTime.tryParse(j['at'] as String? ?? ''),
+  );
 
   /// 'musicxml', 'midi', 'recording', 'photo'…
   final String kind;
@@ -471,12 +496,12 @@ class ScoreSource {
   final DateTime importedAt;
 
   Map<String, dynamic> toJson() => {
-        'kind': kind,
-        if (name != null) 'name': name,
-        if (url != null) 'url': url,
-        if (author != null) 'author': author,
-        'at': importedAt.toIso8601String(),
-      };
+    'kind': kind,
+    if (name != null) 'name': name,
+    if (url != null) 'url': url,
+    if (author != null) 'author': author,
+    'at': importedAt.toIso8601String(),
+  };
 }
 
 /// Partitura guardada en Scale.
@@ -496,10 +521,10 @@ class Score {
     this.recording,
     DateTime? createdAt,
     DateTime? updatedAt,
-  })  : measures = measures ?? [],
-        parts = parts ?? [],
-        createdAt = createdAt ?? DateTime.now(),
-        updatedAt = updatedAt ?? DateTime.now();
+  }) : measures = measures ?? [],
+       parts = parts ?? [],
+       createdAt = createdAt ?? DateTime.now(),
+       updatedAt = updatedAt ?? DateTime.now();
 
   static const String format = 'scale.score';
   static const int version = 1;
@@ -555,17 +580,17 @@ class Score {
   int get noteCount => parts.fold(0, (n, p) => n + p.events.fold(0, (m, e) => m + e.notes.length));
 
   Map<String, dynamic> toJson() => {
-        'format': format,
-        'version': version,
-        'id': id,
-        'title': title,
-        if (composer != null) 'composer': composer,
-        if (arranger != null) 'arranger': arranger,
-        if (source != null) 'source': source!.toJson(),
-        'created': createdAt.toIso8601String(),
-        'updated': updatedAt.toIso8601String(),
-        'measures': [for (final m in measures) m.toJson()],
-        'parts': [for (final p in parts) p.toJson()],
-        if (recording != null) 'recording': recording!.toJson(),
-      };
+    'format': format,
+    'version': version,
+    'id': id,
+    'title': title,
+    if (composer != null) 'composer': composer,
+    if (arranger != null) 'arranger': arranger,
+    if (source != null) 'source': source!.toJson(),
+    'created': createdAt.toIso8601String(),
+    'updated': updatedAt.toIso8601String(),
+    'measures': [for (final m in measures) m.toJson()],
+    'parts': [for (final p in parts) p.toJson()],
+    if (recording != null) 'recording': recording!.toJson(),
+  };
 }

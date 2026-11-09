@@ -37,17 +37,12 @@ class KeyAnalyzer {
     final logStay = math.log(1 - switchProbability);
     final logMove = [
       for (var j = 0; j < 24; j++)
-        [
-          for (var k = 0; k < 24; k++)
-            k == j ? logStay : math.log(switchProbability * KeyModel.neighbors[j][k]),
-        ],
+        [for (var k = 0; k < 24; k++) k == j ? logStay : math.log(switchProbability * KeyModel.neighbors[j][k])],
     ];
-    double emit(int t, int k) =>
-        (weights?[t] ?? 1) * math.log(KeyModel.likelihood(chords[t], keys[k]));
+    double emit(int t, int k) => (weights?[t] ?? 1) * math.log(KeyModel.likelihood(chords[t], keys[k]));
 
     var delta = [
-      for (var k = 0; k < 24; k++)
-        math.log(keys[k].isMajor ? majorPrior / 12 : (1 - majorPrior) / 12) + emit(0, k),
+      for (var k = 0; k < 24; k++) math.log(keys[k].isMajor ? majorPrior / 12 : (1 - majorPrior) / 12) + emit(0, k),
     ];
     final back = <List<int>>[];
     for (var t = 1; t < n; t++) {
@@ -89,9 +84,9 @@ class KeyAnalyzer {
       }
     }
     double confidenceOf(_Run r) => KeyEstimator.fromChords(
-          chords.sublist(r.start, r.end),
-          weights: weights?.sublist(r.start, r.end),
-        ).probabilityOf(keys[r.key]);
+      chords.sublist(r.start, r.end),
+      weights: weights?.sublist(r.start, r.end),
+    ).probabilityOf(keys[r.key]);
 
     _absorbShortRuns(runs, minRegionLength);
     _mergeRelatives(runs, keys);
@@ -109,10 +104,7 @@ class KeyAnalyzer {
       }
     }
 
-    return [
-      for (final r in runs)
-        KeyRegion(start: r.start, end: r.end, key: keys[r.key], confidence: confidenceOf(r)),
-    ];
+    return [for (final r in runs) KeyRegion(start: r.start, end: r.end, key: keys[r.key], confidence: confidenceOf(r))];
   }
 
   static void _absorbShortRuns(List<_Run> runs, int minLength) {

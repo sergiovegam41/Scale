@@ -19,12 +19,7 @@ class MusicKey {
     var s = input.trim();
     var minor = false;
     final lower = s.toLowerCase();
-    for (final (word, isMinor) in const [
-      ('mayor', false),
-      ('major', false),
-      ('menor', true),
-      ('minor', true),
-    ]) {
+    for (final (word, isMinor) in const [('mayor', false), ('major', false), ('menor', true), ('minor', true)]) {
       if (lower.endsWith(word)) {
         s = s.substring(0, s.length - word.length).trim();
         minor = isMinor;
@@ -45,14 +40,32 @@ class MusicKey {
 
   // Ortografía convencional de la tónica (menos alteraciones en la armadura).
   static const List<SpelledNote> _majorTonics = [
-    SpelledNote(0, 0), SpelledNote(1, -1), SpelledNote(1, 0), SpelledNote(2, -1),
-    SpelledNote(2, 0), SpelledNote(3, 0), SpelledNote(3, 1), SpelledNote(4, 0),
-    SpelledNote(5, -1), SpelledNote(5, 0), SpelledNote(6, -1), SpelledNote(6, 0),
+    SpelledNote(0, 0),
+    SpelledNote(1, -1),
+    SpelledNote(1, 0),
+    SpelledNote(2, -1),
+    SpelledNote(2, 0),
+    SpelledNote(3, 0),
+    SpelledNote(3, 1),
+    SpelledNote(4, 0),
+    SpelledNote(5, -1),
+    SpelledNote(5, 0),
+    SpelledNote(6, -1),
+    SpelledNote(6, 0),
   ];
   static const List<SpelledNote> _minorTonics = [
-    SpelledNote(0, 0), SpelledNote(0, 1), SpelledNote(1, 0), SpelledNote(2, -1),
-    SpelledNote(2, 0), SpelledNote(3, 0), SpelledNote(3, 1), SpelledNote(4, 0),
-    SpelledNote(4, 1), SpelledNote(5, 0), SpelledNote(6, -1), SpelledNote(6, 0),
+    SpelledNote(0, 0),
+    SpelledNote(0, 1),
+    SpelledNote(1, 0),
+    SpelledNote(2, -1),
+    SpelledNote(2, 0),
+    SpelledNote(3, 0),
+    SpelledNote(3, 1),
+    SpelledNote(4, 0),
+    SpelledNote(4, 1),
+    SpelledNote(5, 0),
+    SpelledNote(6, -1),
+    SpelledNote(6, 0),
   ];
 
   // Semitonos desde la tónica → cuántas letras avanzar (b2, b3, #4, b6, b7).
@@ -74,12 +87,22 @@ class MusicKey {
   /// Tríadas de cada grado (en menor, el V mayor: el habitual en canciones).
   List<Chord> get diatonicChords {
     const majorQualities = [
-      ChordQuality.major, ChordQuality.minor, ChordQuality.minor, ChordQuality.major,
-      ChordQuality.major, ChordQuality.minor, ChordQuality.diminished,
+      ChordQuality.major,
+      ChordQuality.minor,
+      ChordQuality.minor,
+      ChordQuality.major,
+      ChordQuality.major,
+      ChordQuality.minor,
+      ChordQuality.diminished,
     ];
     const minorQualities = [
-      ChordQuality.minor, ChordQuality.diminished, ChordQuality.major, ChordQuality.minor,
-      ChordQuality.major, ChordQuality.major, ChordQuality.major,
+      ChordQuality.minor,
+      ChordQuality.diminished,
+      ChordQuality.major,
+      ChordQuality.minor,
+      ChordQuality.major,
+      ChordQuality.major,
+      ChordQuality.major,
     ];
     final qualities = isMajor ? majorQualities : minorQualities;
     return [for (final (i, pc) in scale.indexed) Chord(pc, qualities[i])];
@@ -104,8 +127,7 @@ class MusicKey {
   }
 
   /// Nombre corto: "G", "Em".
-  String name([Notation notation = Notation.american]) =>
-      tonicSpelling.name(notation) + (isMajor ? '' : 'm');
+  String name([Notation notation = Notation.american]) => tonicSpelling.name(notation) + (isMajor ? '' : 'm');
 
   /// Nombre largo: "G mayor", "Mi menor".
   String label([Notation notation = Notation.american]) =>

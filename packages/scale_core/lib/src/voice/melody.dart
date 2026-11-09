@@ -100,10 +100,32 @@ class MelodyKeyEstimator {
   const MelodyKeyEstimator._();
 
   static const List<double> _major = [
-    0.748, 0.060, 0.488, 0.082, 0.670, 0.460, 0.096, 0.715, 0.104, 0.366, 0.057, 0.400,
+    0.748,
+    0.060,
+    0.488,
+    0.082,
+    0.670,
+    0.460,
+    0.096,
+    0.715,
+    0.104,
+    0.366,
+    0.057,
+    0.400,
   ];
   static const List<double> _minor = [
-    0.712, 0.084, 0.474, 0.618, 0.049, 0.460, 0.105, 0.747, 0.404, 0.067, 0.133, 0.330,
+    0.712,
+    0.084,
+    0.474,
+    0.618,
+    0.049,
+    0.460,
+    0.105,
+    0.747,
+    0.404,
+    0.067,
+    0.133,
+    0.330,
   ];
 
   static final List<double> _majorLog = _logNormalized(_major);
@@ -122,9 +144,7 @@ class MelodyKeyEstimator {
   static const double _evidenceScale = 0.35;
 
   static KeyEstimate estimate(List<SungNote> notes, {double majorPrior = 0.55}) {
-    final log = [
-      for (final k in MusicKey.all) math.log(k.isMajor ? majorPrior / 12 : (1 - majorPrior) / 12),
-    ];
+    final log = [for (final k in MusicKey.all) math.log(k.isMajor ? majorPrior / 12 : (1 - majorPrior) / 12)];
     for (final note in notes) {
       final weight = _evidenceScale * (note.durationMicros / _unitMicros).clamp(0.3, 3.0);
       for (var i = 0; i < 24; i++) {

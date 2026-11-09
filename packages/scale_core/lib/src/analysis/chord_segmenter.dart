@@ -41,10 +41,7 @@ class NoteGroup {
 ///
 /// Es determinista: el tiempo solo avanza con los eventos o con [advanceTo].
 class ChordSegmenter {
-  ChordSegmenter({
-    this.clusterWindowMicros = 70000,
-    this.arpeggioWindowMicros = 1500000,
-  });
+  ChordSegmenter({this.clusterWindowMicros = 70000, this.arpeggioWindowMicros = 1500000});
 
   final int clusterWindowMicros;
   final int arpeggioWindowMicros;
@@ -66,8 +63,7 @@ class ChordSegmenter {
   bool get pedalDown => _pedalDown;
 
   /// Instante en que se cerrará el ataque en curso, si hay uno.
-  int? get pendingCloseMicros =>
-      _clusterStart == null ? null : _lastOnset + clusterWindowMicros;
+  int? get pendingCloseMicros => _clusterStart == null ? null : _lastOnset + clusterWindowMicros;
 
   List<NoteGroup> add(MidiEvent event) {
     final out = advanceTo(event.timeMicros);
@@ -122,9 +118,7 @@ class ChordSegmenter {
         if (e.value >= start - arpeggioWindowMicros) notes.add(e.key);
       }
     }
-    final extendsPrevious = _previous.isNotEmpty &&
-        _held.containsAll(_previous) &&
-        !_previous.containsAll(notes);
+    final extendsPrevious = _previous.isNotEmpty && _held.containsAll(_previous) && !_previous.containsAll(notes);
     final group = NoteGroup(
       startMicros: start,
       notes: notes,

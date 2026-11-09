@@ -98,9 +98,7 @@ void main() {
   test('una parte termina en G y la otra empieza en G', () {
     // Parte 3: Em C D G · Parte 4: G D C (G de 2 s cada uno en la grabación).
     final s = Song.create(title: 'x');
-    for (final (text, seconds) in [
-      ('Em', 2), ('C', 2), ('D', 2), ('G', 2), ('G', 2), ('D', 2), ('C', 2),
-    ]) {
+    for (final (text, seconds) in [('Em', 2), ('C', 2), ('D', 2), ('G', 2), ('G', 2), ('D', 2), ('C', 2)]) {
       s.chords.add(ChordEvent(chord: c(text), durationMicros: seconds * 1000000));
     }
     final p3 = s.newSection(label: 'Parte 3');

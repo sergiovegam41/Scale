@@ -33,7 +33,8 @@ class MusicXmlReader {
     if (bytes.length >= 2 && ((bytes[0] == 0xFF && bytes[1] == 0xFE) || (bytes[0] == 0xFE && bytes[1] == 0xFF))) {
       final little = bytes[0] == 0xFF;
       final units = <int>[
-        for (var i = 2; i + 1 < bytes.length; i += 2) little ? bytes[i] | bytes[i + 1] << 8 : bytes[i] << 8 | bytes[i + 1],
+        for (var i = 2; i + 1 < bytes.length; i += 2)
+          little ? bytes[i] | bytes[i + 1] << 8 : bytes[i] << 8 | bytes[i + 1],
       ];
       return String.fromCharCodes(units);
     }
@@ -72,7 +73,8 @@ class MusicXmlReader {
     }
     if (root.name.local != 'score-partwise') throw const FormatException('No es una partitura MusicXML');
 
-    final title = _text(root.getElement('work')?.getElement('work-title')) ??
+    final title =
+        _text(root.getElement('work')?.getElement('work-title')) ??
         _text(root.getElement('movement-title')) ??
         _creditTitle(root) ??
         _stripExtension(fileName) ??
@@ -101,24 +103,29 @@ class MusicXmlReader {
     final measures = <Measure>[];
     var tick = 0;
     for (var i = 0; i < count; i++) {
-      final infos = [for (final p in parsed) if (i < p.measures.length) p.measures[i]];
+      final infos = [
+        for (final p in parsed)
+          if (i < p.measures.length) p.measures[i],
+      ];
       final first = infos.first;
       var length = infos.map((m) => m.contentLength).reduce(math.max);
       if (length <= 0) length = first.time.measureTicks;
-      measures.add(Measure(
-        number: first.number,
-        tick: tick,
-        length: length,
-        time: first.time,
-        fifths: first.fifths,
-        minor: first.minor,
-        tempo: infos.map((m) => m.tempo).whereType<double>().firstOrNull,
-        repeatStart: infos.any((m) => m.repeatStart),
-        repeatEnd: infos.any((m) => m.repeatEnd),
-        repeatTimes: first.repeatTimes,
-        endings: first.endings,
-        implicit: first.implicit,
-      ));
+      measures.add(
+        Measure(
+          number: first.number,
+          tick: tick,
+          length: length,
+          time: first.time,
+          fifths: first.fifths,
+          minor: first.minor,
+          tempo: infos.map((m) => m.tempo).whereType<double>().firstOrNull,
+          repeatStart: infos.any((m) => m.repeatStart),
+          repeatEnd: infos.any((m) => m.repeatEnd),
+          repeatTimes: first.repeatTimes,
+          endings: first.endings,
+          implicit: first.implicit,
+        ),
+      );
       tick += length;
     }
 
@@ -448,7 +455,8 @@ class _PartParse {
     if (kind == 'none') return null;
     final adds = [
       for (final d in h.findElements('degree'))
-        if (d.getElement('degree-type')?.innerText.trim() == 'add') int.tryParse(d.getElement('degree-value')?.innerText.trim() ?? ''),
+        if (d.getElement('degree-type')?.innerText.trim() == 'add')
+          int.tryParse(d.getElement('degree-value')?.innerText.trim() ?? ''),
     ];
     final quality = _quality(kind, adds);
     int? bassPc;
@@ -456,12 +464,18 @@ class _PartParse {
     if (bass != null) {
       final b = _letters.indexOf(bass.getElement('bass-step')?.innerText.trim() ?? '');
       if (b >= 0) {
-        bassPc = (_letterPitch[b] + (double.tryParse(bass.getElement('bass-alter')?.innerText.trim() ?? '') ?? 0).round()) % 12;
+        bassPc =
+            (_letterPitch[b] + (double.tryParse(bass.getElement('bass-alter')?.innerText.trim() ?? '') ?? 0).round()) %
+            12;
       }
     }
     final offset = _ticks(h.getElement('offset')?.innerText);
     final text = kindEl?.getAttribute('text');
-    return ChordSymbol(tick: math.max(0, pos + offset), chord: Chord(rootPc, quality, bass: bassPc), text: text);
+    return ChordSymbol(
+      tick: math.max(0, pos + offset),
+      chord: Chord(rootPc, quality, bass: bassPc),
+      text: text,
+    );
   }
 
   static ChordQuality _quality(String kind, List<int?> adds) {

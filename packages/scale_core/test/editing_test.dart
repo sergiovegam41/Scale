@@ -8,9 +8,7 @@ List<Chord> chords(String text) => [for (final s in text.split(' ')) ChordParser
 /// Canción con partes (inicio, fin, vueltas) sobre la secuencia lineal.
 Song songOf(String text, List<(int, int, int)> parts) {
   final song = Song.create(title: 'x')
-    ..chords.addAll([
-      for (final (i, c) in chords(text).indexed) ChordEvent(chord: c, startMicros: i * 1000000),
-    ]);
+    ..chords.addAll([for (final (i, c) in chords(text).indexed) ChordEvent(chord: c, startMicros: i * 1000000)]);
   for (final (start, end, repeats) in parts) {
     final s = song.newSection(label: song.nextPartLabel());
     song

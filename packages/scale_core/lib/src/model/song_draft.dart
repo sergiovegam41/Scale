@@ -14,18 +14,15 @@ class DraftSection {
   });
 
   factory DraftSection.fromJson(Map<String, dynamic> json) => DraftSection(
-        label: (json['label'] as String? ?? '').trim(),
-        kind: SectionKind.values.asNameMap()[json['kind']] ?? SectionKind.other,
-        repeats: (json['repeats'] as num?)?.toInt() ?? 1,
-        note: (json['note'] as String? ?? '').trim(),
-        chords: [
-          for (final c in (json['chords'] as List?) ?? const [])
-            (
-              (c as Map<String, dynamic>)['symbol'] as String? ?? '',
-              (c['beats'] as num?)?.toInt() ?? 0,
-            ),
-        ],
-      );
+    label: (json['label'] as String? ?? '').trim(),
+    kind: SectionKind.values.asNameMap()[json['kind']] ?? SectionKind.other,
+    repeats: (json['repeats'] as num?)?.toInt() ?? 1,
+    note: (json['note'] as String? ?? '').trim(),
+    chords: [
+      for (final c in (json['chords'] as List?) ?? const [])
+        ((c as Map<String, dynamic>)['symbol'] as String? ?? '', (c['beats'] as num?)?.toInt() ?? 0),
+    ],
+  );
 
   final String label;
   final SectionKind kind;
@@ -44,22 +41,16 @@ class DraftSection {
 /// validar. Los cifrados se leen con [ChordParser]; los que no se entienden
 /// se informan en vez de inventarse.
 class SongDraft {
-  const SongDraft({
-    required this.title,
-    required this.key,
-    required this.sections,
-    required this.lyrics,
-  });
+  const SongDraft({required this.title, required this.key, required this.sections, required this.lyrics});
 
   factory SongDraft.fromJson(Map<String, dynamic> json) => SongDraft(
-        title: (json['title'] as String? ?? '').trim(),
-        key: (json['key'] as String? ?? '').trim(),
-        sections: [
-          for (final s in (json['sections'] as List?) ?? const [])
-            DraftSection.fromJson(s as Map<String, dynamic>),
-        ],
-        lyrics: (json['lyrics'] as String? ?? '').trim(),
-      );
+    title: (json['title'] as String? ?? '').trim(),
+    key: (json['key'] as String? ?? '').trim(),
+    sections: [
+      for (final s in (json['sections'] as List?) ?? const []) DraftSection.fromJson(s as Map<String, dynamic>),
+    ],
+    lyrics: (json['lyrics'] as String? ?? '').trim(),
+  );
 
   final String title;
 
@@ -88,10 +79,7 @@ class SongDraft {
             'label': {'type': 'string'},
             'kind': {
               'type': 'string',
-              'enum': [
-                'intro', 'verse', 'preChorus', 'chorus', 'bridge',
-                'interlude', 'tag', 'outro', 'other',
-              ],
+              'enum': ['intro', 'verse', 'preChorus', 'chorus', 'bridge', 'interlude', 'tag', 'outro', 'other'],
             },
             'repeats': {'type': 'integer'},
             'note': {'type': 'string'},
@@ -115,22 +103,22 @@ class SongDraft {
   };
 
   Map<String, dynamic> toJson() => {
-        'title': title,
-        'key': key,
-        'sections': [
-          for (final s in sections)
-            {
-              'label': s.label,
-              'kind': s.kind.name,
-              'repeats': s.repeats,
-              'note': s.note,
-              'chords': [
-                for (final (symbol, beats) in s.chords) {'symbol': symbol, 'beats': beats},
-              ],
-            },
-        ],
-        'lyrics': lyrics,
-      };
+    'title': title,
+    'key': key,
+    'sections': [
+      for (final s in sections)
+        {
+          'label': s.label,
+          'kind': s.kind.name,
+          'repeats': s.repeats,
+          'note': s.note,
+          'chords': [
+            for (final (symbol, beats) in s.chords) {'symbol': symbol, 'beats': beats},
+          ],
+        },
+    ],
+    'lyrics': lyrics,
+  };
 
   /// Convierte el borrador en canción. La secuencia lineal contiene todas las
   /// vueltas (como si se hubiera tocado). Tonalidad y modulaciones salen del
@@ -150,10 +138,8 @@ class SongDraft {
       }
       if (pass.isEmpty) continue;
       final repeats = s.repeats < 1 ? 1 : s.repeats;
-      final section = song.newSection(
-        label: s.label.isEmpty ? song.nextPartLabel() : s.label,
-        kind: s.kind,
-      )..note = s.note.isEmpty ? null : s.note;
+      final section = song.newSection(label: s.label.isEmpty ? song.nextPartLabel() : s.label, kind: s.kind)
+        ..note = s.note.isEmpty ? null : s.note;
       final start = song.chords.length;
       for (var r = 0; r < repeats; r++) {
         song.chords.addAll(r == 0 ? pass : pass.map((c) => c.copyForRepeat()));
@@ -161,12 +147,7 @@ class SongDraft {
       song
         ..sections.add(section)
         ..arrangement.add(
-          SectionOccurrence(
-            sectionId: section.id,
-            start: start,
-            end: song.chords.length,
-            repeats: repeats,
-          ),
+          SectionOccurrence(sectionId: section.id, start: start, end: song.chords.length, repeats: repeats),
         );
     }
     if (lyrics.isNotEmpty) song.lyrics = SongLyrics(format: 'chordpro', text: lyrics);

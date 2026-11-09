@@ -5,11 +5,7 @@ import 'chord_segmenter.dart';
 
 /// Un acorde de la secuencia detectada.
 class DetectedChord {
-  DetectedChord({
-    required this.startMicros,
-    required this.recognition,
-    required this.notes,
-  });
+  DetectedChord({required this.startMicros, required this.recognition, required this.notes});
 
   final int startMicros;
   int? endMicros;
@@ -121,10 +117,7 @@ class LiveChordDetector {
       final last = chords.last;
       if (last.chord == chord) return;
       final rolled = group.startMicros - last.startMicros < refineWindowMicros;
-      if (rolled &&
-          group.extendsPrevious &&
-          last.chord.root == chord.root &&
-          last.chord.bass == chord.bass) {
+      if (rolled && group.extendsPrevious && last.chord.root == chord.root && last.chord.bass == chord.bass) {
         last
           ..recognition = rec
           ..notes = group.notes;
@@ -137,10 +130,7 @@ class LiveChordDetector {
       }
       // Adorno: una sola nota nueva sobre el bajo sostenido que deja la misma
       // fundamental y bajo (D2 D3 + G4 → F#4 → G4) no cambia el acorde.
-      if (group.onsets == 1 &&
-          group.bassHeld &&
-          last.chord.root == chord.root &&
-          last.chord.bass == chord.bass) {
+      if (group.onsets == 1 && group.bassHeld && last.chord.root == chord.root && last.chord.bass == chord.bass) {
         return;
       }
       if (group.startMicros - last.startMicros < minChordMicros) {

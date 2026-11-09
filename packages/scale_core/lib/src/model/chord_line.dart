@@ -67,9 +67,8 @@ class ChordLine {
     ChordFormatter formatter = const ChordFormatter(),
     MusicKey? key,
     int repeats = 1,
-  }) =>
-      [
-        for (final e in pass) formatter.format(e.chord, spell: key?.spell) + "'" * (e.beats ?? 0),
-        if (repeats > 1) 'x$repeats',
-      ].join(' ');
+  }) => [
+    for (final e in pass) formatter.format(e.chord, spell: key?.spell) + "'" * (e.beats ?? 0),
+    if (repeats > 1) 'x$repeats',
+  ].join(' ');
 }

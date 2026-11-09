@@ -16,24 +16,38 @@ class MusicXmlWriter {
   static String write(Score score) {
     final b = XmlBuilder();
     b.processing('xml', 'version="1.0" encoding="UTF-8"');
-    b.element('score-partwise', attributes: {'version': '4.0'}, nest: () {
-      b.element('work', nest: () => b.element('work-title', nest: score.title));
-      b.element('identification', nest: () {
-        if (score.composer != null) b.element('creator', attributes: {'type': 'composer'}, nest: score.composer);
-        if (score.arranger != null) b.element('creator', attributes: {'type': 'arranger'}, nest: score.arranger);
-        b.element('encoding', nest: () => b.element('software', nest: 'Scale'));
-      });
-      b.element('part-list', nest: () {
+    b.element(
+      'score-partwise',
+      attributes: {'version': '4.0'},
+      nest: () {
+        b.element('work', nest: () => b.element('work-title', nest: score.title));
+        b.element(
+          'identification',
+          nest: () {
+            if (score.composer != null) b.element('creator', attributes: {'type': 'composer'}, nest: score.composer);
+            if (score.arranger != null) b.element('creator', attributes: {'type': 'arranger'}, nest: score.arranger);
+            b.element('encoding', nest: () => b.element('software', nest: 'Scale'));
+          },
+        );
+        b.element(
+          'part-list',
+          nest: () {
+            for (final p in score.parts) {
+              b.element(
+                'score-part',
+                attributes: {'id': p.id},
+                nest: () {
+                  b.element('part-name', nest: p.name);
+                },
+              );
+            }
+          },
+        );
         for (final p in score.parts) {
-          b.element('score-part', attributes: {'id': p.id}, nest: () {
-            b.element('part-name', nest: p.name);
-          });
+          _PartWriter(b, score, p).write();
         }
-      });
-      for (final p in score.parts) {
-        _PartWriter(b, score, p).write();
-      }
-    });
+      },
+    );
     return b.buildDocument().toXmlString();
   }
 }
@@ -58,117 +72,172 @@ class _PartWriter {
     for (final d in part.directions) {
       dirsBy[score.measureAt(d.tick)].add(d);
     }
-    b.element('part', attributes: {'id': part.id}, nest: () {
-      for (final (mi, m) in score.measures.indexed) {
-        final prev = mi == 0 ? null : score.measures[mi - 1];
-        b.element('measure', attributes: {'number': m.number, if (m.implicit) 'implicit': 'yes'}, nest: () {
-          _attributes(m, prev, first: mi == 0);
-          _leftBarline(m, prev);
-          if (m.tempo != null && part == score.parts.first) _tempo(m.tempo!);
-          for (final c in chordsBy[mi]) {
-            _harmony(c, m);
-          }
-          for (final d in dirsBy[mi]) {
-            _direction(d, m);
-          }
-          _events(m, byMeasure[mi]);
-          _rightBarline(m, mi + 1 < score.measures.length ? score.measures[mi + 1] : null);
-        });
-      }
-    });
+    b.element(
+      'part',
+      attributes: {'id': part.id},
+      nest: () {
+        for (final (mi, m) in score.measures.indexed) {
+          final prev = mi == 0 ? null : score.measures[mi - 1];
+          b.element(
+            'measure',
+            attributes: {'number': m.number, if (m.implicit) 'implicit': 'yes'},
+            nest: () {
+              _attributes(m, prev, first: mi == 0);
+              _leftBarline(m, prev);
+              if (m.tempo != null && part == score.parts.first) _tempo(m.tempo!);
+              for (final c in chordsBy[mi]) {
+                _harmony(c, m);
+              }
+              for (final d in dirsBy[mi]) {
+                _direction(d, m);
+              }
+              _events(m, byMeasure[mi]);
+              _rightBarline(m, mi + 1 < score.measures.length ? score.measures[mi + 1] : null);
+            },
+          );
+        }
+      },
+    );
   }
 
   void _attributes(Measure m, Measure? prev, {required bool first}) {
     final keyChanged = first || prev!.fifths != m.fifths || prev.minor != m.minor;
     final timeChanged = first || prev!.time != m.time;
     if (!keyChanged && !timeChanged) return;
-    b.element('attributes', nest: () {
-      if (first) b.element('divisions', nest: '$ticksPerQuarter');
-      if (keyChanged) {
-        b.element('key', nest: () {
-          b.element('fifths', nest: '${m.fifths}');
-          b.element('mode', nest: m.minor ? 'minor' : 'major');
-        });
-      }
-      if (timeChanged) {
-        b.element('time', nest: () {
-          b.element('beats', nest: '${m.time.beats}');
-          b.element('beat-type', nest: '${m.time.beatType}');
-        });
-      }
-      if (first) {
-        if (part.staves > 1) b.element('staves', nest: '${part.staves}');
-        for (var s = 0; s < part.staves; s++) {
-          final clef = s < part.clefs.length ? part.clefs[s] : (s == 0 ? Clef.treble : Clef.bass);
-          b.element('clef', attributes: {if (part.staves > 1) 'number': '${s + 1}'}, nest: () {
-            b.element('sign', nest: clef.sign);
-            b.element('line', nest: '${clef.line}');
-            if (clef.octaveChange != 0) b.element('clef-octave-change', nest: '${clef.octaveChange}');
-          });
+    b.element(
+      'attributes',
+      nest: () {
+        if (first) b.element('divisions', nest: '$ticksPerQuarter');
+        if (keyChanged) {
+          b.element(
+            'key',
+            nest: () {
+              b.element('fifths', nest: '${m.fifths}');
+              b.element('mode', nest: m.minor ? 'minor' : 'major');
+            },
+          );
         }
-      }
-    });
+        if (timeChanged) {
+          b.element(
+            'time',
+            nest: () {
+              b.element('beats', nest: '${m.time.beats}');
+              b.element('beat-type', nest: '${m.time.beatType}');
+            },
+          );
+        }
+        if (first) {
+          if (part.staves > 1) b.element('staves', nest: '${part.staves}');
+          for (var s = 0; s < part.staves; s++) {
+            final clef = s < part.clefs.length ? part.clefs[s] : (s == 0 ? Clef.treble : Clef.bass);
+            b.element(
+              'clef',
+              attributes: {if (part.staves > 1) 'number': '${s + 1}'},
+              nest: () {
+                b.element('sign', nest: clef.sign);
+                b.element('line', nest: '${clef.line}');
+                if (clef.octaveChange != 0) b.element('clef-octave-change', nest: '${clef.octaveChange}');
+              },
+            );
+          }
+        }
+      },
+    );
   }
 
   void _leftBarline(Measure m, Measure? prev) {
     final endingStart = m.endings.isNotEmpty && (prev == null || !_sameList(prev.endings, m.endings));
     if (!m.repeatStart && !endingStart) return;
-    b.element('barline', attributes: {'location': 'left'}, nest: () {
-      if (m.repeatStart) b.element('bar-style', nest: 'heavy-light');
-      if (endingStart) b.element('ending', attributes: {'number': m.endings.join(', '), 'type': 'start'});
-      if (m.repeatStart) b.element('repeat', attributes: {'direction': 'forward'});
-    });
+    b.element(
+      'barline',
+      attributes: {'location': 'left'},
+      nest: () {
+        if (m.repeatStart) b.element('bar-style', nest: 'heavy-light');
+        if (endingStart) b.element('ending', attributes: {'number': m.endings.join(', '), 'type': 'start'});
+        if (m.repeatStart) b.element('repeat', attributes: {'direction': 'forward'});
+      },
+    );
   }
 
   void _rightBarline(Measure m, Measure? next) {
     final endingStop = m.endings.isNotEmpty && (next == null || !_sameList(next.endings, m.endings));
     if (!m.repeatEnd && !endingStop) return;
-    b.element('barline', attributes: {'location': 'right'}, nest: () {
-      if (m.repeatEnd) b.element('bar-style', nest: 'light-heavy');
-      if (endingStop) {
-        b.element('ending', attributes: {'number': m.endings.join(', '), 'type': m.repeatEnd ? 'stop' : 'discontinue'});
-      }
-      if (m.repeatEnd) {
-        b.element('repeat', attributes: {'direction': 'backward', if (m.repeatTimes != 2) 'times': '${m.repeatTimes}'});
-      }
-    });
+    b.element(
+      'barline',
+      attributes: {'location': 'right'},
+      nest: () {
+        if (m.repeatEnd) b.element('bar-style', nest: 'light-heavy');
+        if (endingStop) {
+          b.element(
+            'ending',
+            attributes: {'number': m.endings.join(', '), 'type': m.repeatEnd ? 'stop' : 'discontinue'},
+          );
+        }
+        if (m.repeatEnd) {
+          b.element(
+            'repeat',
+            attributes: {'direction': 'backward', if (m.repeatTimes != 2) 'times': '${m.repeatTimes}'},
+          );
+        }
+      },
+    );
   }
 
   void _tempo(double bpm) {
     final value = bpm == bpm.roundToDouble() ? '${bpm.round()}' : bpm.toStringAsFixed(1);
-    b.element('direction', attributes: {'placement': 'above'}, nest: () {
-      b.element('direction-type', nest: () {
-        b.element('metronome', nest: () {
-          b.element('beat-unit', nest: 'quarter');
-          b.element('per-minute', nest: value);
-        });
-      });
-      b.element('sound', attributes: {'tempo': value});
-    });
+    b.element(
+      'direction',
+      attributes: {'placement': 'above'},
+      nest: () {
+        b.element(
+          'direction-type',
+          nest: () {
+            b.element(
+              'metronome',
+              nest: () {
+                b.element('beat-unit', nest: 'quarter');
+                b.element('per-minute', nest: value);
+              },
+            );
+          },
+        );
+        b.element('sound', attributes: {'tempo': value});
+      },
+    );
   }
 
   /// Dinámica o regulador, con `<offset>` desde el inicio del compás (el
   /// cursor de escritura está ahí: va antes de las notas).
   void _direction(ScoreDirection d, Measure m) {
     final wedge = d.kind == DirectionKind.wedge;
-    b.element('direction', attributes: {'placement': 'below'}, nest: () {
-      b.element('direction-type', nest: () {
-        if (wedge) {
-          b.element('wedge', attributes: {'type': d.value});
-        } else {
-          b.element('dynamics', nest: () {
-            if (ScoreDirection.velocities.containsKey(d.value)) {
-              b.element(d.value);
+    b.element(
+      'direction',
+      attributes: {'placement': 'below'},
+      nest: () {
+        b.element(
+          'direction-type',
+          nest: () {
+            if (wedge) {
+              b.element('wedge', attributes: {'type': d.value});
             } else {
-              b.element('other-dynamics', nest: d.value);
+              b.element(
+                'dynamics',
+                nest: () {
+                  if (ScoreDirection.velocities.containsKey(d.value)) {
+                    b.element(d.value);
+                  } else {
+                    b.element('other-dynamics', nest: d.value);
+                  }
+                },
+              );
             }
-          });
-        }
-      });
-      final offset = d.tick - m.tick;
-      if (offset > 0) b.element('offset', nest: '$offset');
-      if (part.staves > 1) b.element('staff', nest: '${d.staff}');
-    });
+          },
+        );
+        final offset = d.tick - m.tick;
+        if (offset > 0) b.element('offset', nest: '$offset');
+        if (part.staves > 1) b.element('staff', nest: '${d.staff}');
+      },
+    );
   }
 
   static const _kinds = {
@@ -195,40 +264,52 @@ class _PartWriter {
   void _harmony(ChordSymbol c, Measure m) {
     final chord = c.chord;
     final spell = _defaultSpelling(chord.root, m.fifths);
-    b.element('harmony', nest: () {
-      b.element('root', nest: () {
-        b.element('root-step', nest: _letters[spell.$1]);
-        if (spell.$2 != 0) b.element('root-alter', nest: '${spell.$2}');
-      });
-      final id = chord.quality.id;
-      final kind = _kinds[id] ?? (chord.quality.family.name == 'minor' ? 'minor' : 'major');
-      // El texto del cifrado sin "add9": eso lo dice el <degree> (si no,
-      // algunos programas lo escriben dos veces).
-      final shown = switch (id) {
-        'add9' => '',
-        'madd9' => 'm',
-        '69' => '6',
-        _ => chord.quality.symbol,
-      };
-      b.element('kind', attributes: {'text': shown}, nest: kind);
-      final bass = chord.bass;
-      if (bass != null) {
-        final bs = _defaultSpelling(bass, m.fifths);
-        b.element('bass', nest: () {
-          b.element('bass-step', nest: _letters[bs.$1]);
-          if (bs.$2 != 0) b.element('bass-alter', nest: '${bs.$2}');
-        });
-      }
-      if (id == 'add9' || id == 'madd9' || id == '69') {
-        b.element('degree', nest: () {
-          b.element('degree-value', nest: '9');
-          b.element('degree-alter', nest: '0');
-          b.element('degree-type', nest: 'add');
-        });
-      }
-      final offset = c.tick - m.tick;
-      if (offset > 0) b.element('offset', nest: '$offset');
-    });
+    b.element(
+      'harmony',
+      nest: () {
+        b.element(
+          'root',
+          nest: () {
+            b.element('root-step', nest: _letters[spell.$1]);
+            if (spell.$2 != 0) b.element('root-alter', nest: '${spell.$2}');
+          },
+        );
+        final id = chord.quality.id;
+        final kind = _kinds[id] ?? (chord.quality.family.name == 'minor' ? 'minor' : 'major');
+        // El texto del cifrado sin "add9": eso lo dice el <degree> (si no,
+        // algunos programas lo escriben dos veces).
+        final shown = switch (id) {
+          'add9' => '',
+          'madd9' => 'm',
+          '69' => '6',
+          _ => chord.quality.symbol,
+        };
+        b.element('kind', attributes: {'text': shown}, nest: kind);
+        final bass = chord.bass;
+        if (bass != null) {
+          final bs = _defaultSpelling(bass, m.fifths);
+          b.element(
+            'bass',
+            nest: () {
+              b.element('bass-step', nest: _letters[bs.$1]);
+              if (bs.$2 != 0) b.element('bass-alter', nest: '${bs.$2}');
+            },
+          );
+        }
+        if (id == 'add9' || id == 'madd9' || id == '69') {
+          b.element(
+            'degree',
+            nest: () {
+              b.element('degree-value', nest: '9');
+              b.element('degree-alter', nest: '0');
+              b.element('degree-type', nest: 'add');
+            },
+          );
+        }
+        final offset = c.tick - m.tick;
+        if (offset > 0) b.element('offset', nest: '$offset');
+      },
+    );
   }
 
   /// Letra y alteración de [pc]: sostenidos en armaduras con sostenidos.
@@ -255,11 +336,14 @@ class _PartWriter {
       final beams = list.any((e) => e.beams.isNotEmpty) ? null : _autoBeams(list, m);
       for (final e in list) {
         if (e.tick > pos && !e.grace) {
-          b.element('forward', nest: () {
-            b.element('duration', nest: '${e.tick - pos}');
-            b.element('voice', nest: '${key.$2}');
-            if (part.staves > 1) b.element('staff', nest: '${key.$1}');
-          });
+          b.element(
+            'forward',
+            nest: () {
+              b.element('duration', nest: '${e.tick - pos}');
+              b.element('voice', nest: '${key.$2}');
+              if (part.staves > 1) b.element('staff', nest: '${key.$1}');
+            },
+          );
           pos = e.tick;
         }
         _event(e, m, shown.putIfAbsent(e.staff, () => {}), tuplet, beams?[e] ?? e.beams);
@@ -277,55 +361,65 @@ class _PartWriter {
     final notes = e.notes.isEmpty ? <ScoreNote?>[null] : e.notes;
     for (final (i, n) in notes.indexed) {
       final velocity = n?.velocity;
-      b.element('note', attributes: {
-        'id': n?.id ?? e.id,
-        if (velocity != null) 'dynamics': (velocity * 100 / 90).toStringAsFixed(1),
-      }, nest: () {
-        if (e.grace) b.element('grace');
-        if (i > 0) b.element('chord');
-        if (n == null) {
-          b.element('rest', attributes: {if (_isWholeMeasureRest(e, m)) 'measure': 'yes'});
-        } else {
-          b.element('pitch', nest: () {
-            b.element('step', nest: _letters[n.spelling.letter]);
-            if (n.spelling.accidental != 0) b.element('alter', nest: '${n.spelling.accidental}');
-            b.element('octave', nest: '${n.octave}');
-          });
-        }
-        if (!e.grace) b.element('duration', nest: '${e.duration}');
-        if (n != null && n.tieStop) b.element('tie', attributes: {'type': 'stop'});
-        if (n != null && n.tieStart) b.element('tie', attributes: {'type': 'start'});
-        b.element('voice', nest: '${e.voice}');
-        if (!(n == null && _isWholeMeasureRest(e, m))) b.element('type', nest: written.$1.musicXml);
-        for (var d = 0; d < written.$2; d++) {
-          b.element('dot');
-        }
-        if (n != null) {
-          final acc = _accidental(n, m, shown);
-          if (acc != null) b.element('accidental', nest: acc);
-        }
-        final t = e.tuplet;
-        if (t != null) {
-          b.element('time-modification', nest: () {
-            b.element('actual-notes', nest: '${t.$1}');
-            b.element('normal-notes', nest: '${t.$2}');
-          });
-        }
-        if (part.staves > 1) b.element('staff', nest: '${e.staff}');
-        if (i == 0) {
-          for (final (level, value) in beams.indexed) {
-            if (value.isNotEmpty) b.element('beam', attributes: {'number': '${level + 1}'}, nest: value);
+      b.element(
+        'note',
+        attributes: {'id': n?.id ?? e.id, if (velocity != null) 'dynamics': (velocity * 100 / 90).toStringAsFixed(1)},
+        nest: () {
+          if (e.grace) b.element('grace');
+          if (i > 0) b.element('chord');
+          if (n == null) {
+            b.element('rest', attributes: {if (_isWholeMeasureRest(e, m)) 'measure': 'yes'});
+          } else {
+            b.element(
+              'pitch',
+              nest: () {
+                b.element('step', nest: _letters[n.spelling.letter]);
+                if (n.spelling.accidental != 0) b.element('alter', nest: '${n.spelling.accidental}');
+                b.element('octave', nest: '${n.octave}');
+              },
+            );
           }
-        }
-        final hasNotations = (n != null && (n.tieStart || n.tieStop)) || (i == 0 && tupletMark != null);
-        if (hasNotations) {
-          b.element('notations', nest: () {
-            if (n != null && n.tieStop) b.element('tied', attributes: {'type': 'stop'});
-            if (n != null && n.tieStart) b.element('tied', attributes: {'type': 'start'});
-            if (i == 0 && tupletMark != null) b.element('tuplet', attributes: {'type': tupletMark});
-          });
-        }
-      });
+          if (!e.grace) b.element('duration', nest: '${e.duration}');
+          if (n != null && n.tieStop) b.element('tie', attributes: {'type': 'stop'});
+          if (n != null && n.tieStart) b.element('tie', attributes: {'type': 'start'});
+          b.element('voice', nest: '${e.voice}');
+          if (!(n == null && _isWholeMeasureRest(e, m))) b.element('type', nest: written.$1.musicXml);
+          for (var d = 0; d < written.$2; d++) {
+            b.element('dot');
+          }
+          if (n != null) {
+            final acc = _accidental(n, m, shown);
+            if (acc != null) b.element('accidental', nest: acc);
+          }
+          final t = e.tuplet;
+          if (t != null) {
+            b.element(
+              'time-modification',
+              nest: () {
+                b.element('actual-notes', nest: '${t.$1}');
+                b.element('normal-notes', nest: '${t.$2}');
+              },
+            );
+          }
+          if (part.staves > 1) b.element('staff', nest: '${e.staff}');
+          if (i == 0) {
+            for (final (level, value) in beams.indexed) {
+              if (value.isNotEmpty) b.element('beam', attributes: {'number': '${level + 1}'}, nest: value);
+            }
+          }
+          final hasNotations = (n != null && (n.tieStart || n.tieStop)) || (i == 0 && tupletMark != null);
+          if (hasNotations) {
+            b.element(
+              'notations',
+              nest: () {
+                if (n != null && n.tieStop) b.element('tied', attributes: {'type': 'stop'});
+                if (n != null && n.tieStart) b.element('tied', attributes: {'type': 'start'});
+                if (i == 0 && tupletMark != null) b.element('tuplet', attributes: {'type': tupletMark});
+              },
+            );
+          }
+        },
+      );
     }
   }
 
@@ -446,7 +540,7 @@ class _TupletState {
     String? out;
     if (_ratio != t || _remaining <= 0) {
       _ratio = t;
-      _remaining = t.$2 * type.ticks;
+      _remaining = e.tupletSpan ?? t.$2 * type.ticks;
       out = 'start';
     }
     _remaining -= e.duration;

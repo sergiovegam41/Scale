@@ -94,12 +94,12 @@ class ScorePlayer extends ChangeNotifier {
 
   double _microsAt(int tick) {
     if (!asPlayed) return timeline.microsAt(tick);
-    final r = recording!;
-    final m = (tick - _pickup) / ticksPerQuarter * r.settings.quarterMicros + r.settings.startMicros + r.appliedLatencyMicros;
+    final m = recording!.microsAt(tick, _pickup);
     return m < 0 ? 0 : m;
   }
 
-  double get _endMicros => asPlayed ? recording!.take.durationMicros.toDouble() : timeline.microsAt(timeline.lengthTicks);
+  double get _endMicros =>
+      asPlayed ? recording!.take.durationMicros.toDouble() : timeline.microsAt(timeline.lengthTicks);
 
   /// Compás desplegado actual y su número escrito.
   PlayedMeasure get measure => timeline.order[timeline.playedMeasureAt(_tick)];

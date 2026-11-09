@@ -6,9 +6,9 @@ const fmt = ChordFormatter();
 
 /// Toca un bloque de notas en [at] (con 10 ms entre dedos) y lo suelta en [until].
 List<MidiEvent> block(List<int> notes, int at, int until) => [
-      for (var i = 0; i < notes.length; i++) MidiEvent.noteOn((at + i * 10) * ms, notes[i]),
-      for (final n in notes) MidiEvent.noteOff(until * ms, n),
-    ];
+  for (var i = 0; i < notes.length; i++) MidiEvent.noteOn((at + i * 10) * ms, notes[i]),
+  for (final n in notes) MidiEvent.noteOff(until * ms, n),
+];
 
 List<String> play(List<MidiEvent> events) {
   final detector = LiveChordDetector();

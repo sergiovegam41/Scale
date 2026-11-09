@@ -40,13 +40,11 @@ const _piano = '''<?xml version="1.0" encoding="UTF-8"?>
   </part>
 </score-partwise>''';
 
-String _measures(List<String> bodies) => '''<?xml version="1.0"?>
+String _measures(List<String> bodies) =>
+    '''<?xml version="1.0"?>
 <score-partwise version="4.0"><part-list><score-part id="P1"><part-name>x</part-name></score-part></part-list>
-<part id="P1">${[
-      for (final (i, body) in bodies.indexed)
-        '<measure number="${i + 1}">${i == 0 ? '<attributes><divisions>1</divisions><time><beats>1</beats><beat-type>4</beat-type></time></attributes>' : ''}'
-            '$body<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note></measure>',
-    ].join()}</part></score-partwise>''';
+<part id="P1">${[for (final (i, body) in bodies.indexed) '<measure number="${i + 1}">${i == 0 ? '<attributes><divisions>1</divisions><time><beats>1</beats><beat-type>4</beat-type></time></attributes>' : ''}'
+          '$body<note><pitch><step>C</step><octave>4</octave></pitch><duration>1</duration><voice>1</voice><type>quarter</type></note></measure>'].join()}</part></score-partwise>''';
 
 const _fwd = '<barline location="left"><repeat direction="forward"/></barline>';
 const _back = '<barline location="right"><repeat direction="backward"/></barline>';
@@ -141,8 +139,15 @@ void main() {
     });
 
     test('casillas de 1ª y 2ª vez', () {
-      expect(order([_fwd, '', _endStart('1') + _endStop('1', repeat: true), _endStart('2') + _endStop('2'), '']),
-          [0, 1, 2, 0, 1, 3, 4]);
+      expect(order([_fwd, '', _endStart('1') + _endStop('1', repeat: true), _endStart('2') + _endStop('2'), '']), [
+        0,
+        1,
+        2,
+        0,
+        1,
+        3,
+        4,
+      ]);
     });
 
     test('dos repeticiones seguidas', () {
@@ -150,8 +155,14 @@ void main() {
     });
 
     test('casilla de varios compases', () {
-      expect(order(['', _endStart('1'), _endStop('1', repeat: true), _endStart('2') + _endStop('2'), '']),
-          [0, 1, 2, 0, 3, 4]);
+      expect(order(['', _endStart('1'), _endStop('1', repeat: true), _endStart('2') + _endStop('2'), '']), [
+        0,
+        1,
+        2,
+        0,
+        3,
+        4,
+      ]);
     });
   });
 
@@ -163,9 +174,9 @@ void main() {
       expect(b.title, a.title);
       expect(b.measures.map((m) => (m.tick, m.length, m.fifths)), a.measures.map((m) => (m.tick, m.length, m.fifths)));
       String sig(Score s) => [
-            for (final e in s.parts.single.events)
-              '${e.tick}/${e.duration}/${e.staff}/${e.voice}/${e.notes.map((n) => '${n.id}:${n.midi}:${n.tieStart}${n.tieStop}').join(',')}',
-          ].join(' ');
+        for (final e in s.parts.single.events)
+          '${e.tick}/${e.duration}/${e.staff}/${e.voice}/${e.notes.map((n) => '${n.id}:${n.midi}:${n.tieStart}${n.tieStop}').join(',')}',
+      ].join(' ');
       expect(sig(b).replaceAll(RegExp(r'n0_\d+'), '?'), sig(a).replaceAll(RegExp(r'n0_\d+'), '?'));
       expect(b.parts.single.chords.map((c) => c.chord), a.parts.single.chords.map((c) => c.chord));
       expect(b.measures[0].tempo, 120);
@@ -184,19 +195,21 @@ void main() {
         title: 'x',
         measures: [Measure(number: '1', tick: 0, length: 1920, time: TimeSignature.common, fifths: 1)],
         parts: [
-          ScorePart(id: 'P1', name: 'p', events: [
-            for (final (i, (letter, acc)) in [(3, 1), (3, 0), (3, 1), (3, 1)].indexed)
-              ScoreEvent(
-                id: 'e$i',
-                tick: i * 480,
-                duration: 480,
-                staff: 1,
-                voice: 1,
-                notes: [
-                  ScoreNote(id: 'n$i', midi: 65 + acc, spelling: SpelledNote(letter, acc), octave: 4),
-                ],
-              ),
-          ]),
+          ScorePart(
+            id: 'P1',
+            name: 'p',
+            events: [
+              for (final (i, (letter, acc)) in [(3, 1), (3, 0), (3, 1), (3, 1)].indexed)
+                ScoreEvent(
+                  id: 'e$i',
+                  tick: i * 480,
+                  duration: 480,
+                  staff: 1,
+                  voice: 1,
+                  notes: [ScoreNote(id: 'n$i', midi: 65 + acc, spelling: SpelledNote(letter, acc), octave: 4)],
+                ),
+            ],
+          ),
         ],
       );
       final xml = MusicXmlWriter.write(score);
@@ -206,29 +219,32 @@ void main() {
 
     test('barras: se conservan las escritas y se agrupan solas las que faltan', () {
       ScoreEvent eighth(int i, {List<String> beams = const []}) => ScoreEvent(
-            id: 'e$i',
-            tick: i * 240,
-            duration: 240,
-            staff: 1,
-            voice: 1,
-            type: NoteType.eighth,
-            beams: beams,
-            notes: [ScoreNote(id: 'n$i', midi: 60, spelling: const SpelledNote(0, 0), octave: 4)],
-          );
+        id: 'e$i',
+        tick: i * 240,
+        duration: 240,
+        staff: 1,
+        voice: 1,
+        type: NoteType.eighth,
+        beams: beams,
+        notes: [ScoreNote(id: 'n$i', midi: 60, spelling: const SpelledNote(0, 0), octave: 4)],
+      );
       Score withEvents(List<ScoreEvent> events) => Score(
-            id: 'x',
-            title: 'x',
-            measures: [Measure(number: '1', tick: 0, length: 1920, time: TimeSignature.common, fifths: 0)],
-            parts: [ScorePart(id: 'P1', name: 'p', events: events)],
-          );
-      List<String?> beamsOf(String xml) => RegExp(r'<beam number="1">([a-z ]+)</beam>').allMatches(xml).map((m) => m[1]).toList();
+        id: 'x',
+        title: 'x',
+        measures: [Measure(number: '1', tick: 0, length: 1920, time: TimeSignature.common, fifths: 0)],
+        parts: [ScorePart(id: 'P1', name: 'p', events: events)],
+      );
+      List<String?> beamsOf(String xml) =>
+          RegExp(r'<beam number="1">([a-z ]+)</beam>').allMatches(xml).map((m) => m[1]).toList();
       // Sin barras escritas: de dos en dos por negra.
       final auto = MusicXmlWriter.write(withEvents([for (var i = 0; i < 4; i++) eighth(i)]));
       expect(beamsOf(auto), ['begin', 'end', 'begin', 'end']);
       // Con barras escritas (cuatro juntas) se respetan.
-      final kept = MusicXmlWriter.write(withEvents([
-        for (var i = 0; i < 4; i++) eighth(i, beams: [i == 0 ? 'begin' : (i == 3 ? 'end' : 'continue')]),
-      ]));
+      final kept = MusicXmlWriter.write(
+        withEvents([
+          for (var i = 0; i < 4; i++) eighth(i, beams: [i == 0 ? 'begin' : (i == 3 ? 'end' : 'continue')]),
+        ]),
+      );
       expect(beamsOf(kept), ['begin', 'continue', 'continue', 'end']);
       final back = MusicXmlReader.read(kept, id: 'x');
       expect(back.parts.single.events.first.beams, ['begin']);
@@ -236,15 +252,17 @@ void main() {
 
     test('repeticiones y casillas sobreviven la ida y vuelta', () {
       final a = MusicXmlReader.read(
-          _measures([_fwd, '', _endStart('1') + _endStop('1', repeat: true), _endStart('2') + _endStop('2'), '']),
-          id: 'x');
+        _measures([_fwd, '', _endStart('1') + _endStop('1', repeat: true), _endStart('2') + _endStop('2'), '']),
+        id: 'x',
+      );
       final b = MusicXmlReader.read(MusicXmlWriter.write(a), id: 'x');
       expect(ScoreTimeline.unroll(b.measures).map((m) => m.index), [0, 1, 2, 0, 1, 3, 4]);
     });
   });
 
   group('dinámicas', () {
-    const xml = '<?xml version="1.0"?>'
+    const xml =
+        '<?xml version="1.0"?>'
         '<score-partwise version="4.0"><part-list><score-part id="P1"><part-name>x</part-name></score-part></part-list>'
         '<part id="P1">'
         '<measure number="1"><attributes><divisions>1</divisions><time><beats>4</beats><beat-type>4</beat-type></time></attributes>'
@@ -281,8 +299,10 @@ void main() {
     test('ida y vuelta conserva marcas y fuerza', () {
       final a = MusicXmlReader.read(xml, id: 'x');
       final b = MusicXmlReader.read(MusicXmlWriter.write(a), id: 'x');
-      expect(b.parts.single.directions.map((d) => '${d.tick}:${d.value}'),
-          a.parts.single.directions.map((d) => '${d.tick}:${d.value}'));
+      expect(
+        b.parts.single.directions.map((d) => '${d.tick}:${d.value}'),
+        a.parts.single.directions.map((d) => '${d.tick}:${d.value}'),
+      );
       expect(ScoreTimeline.of(b).notes.map((n) => n.velocity), ScoreTimeline.of(a).notes.map((n) => n.velocity));
     });
 
@@ -311,9 +331,11 @@ void main() {
         final t = ScoreTimeline.of(s);
         final xml = MusicXmlWriter.write(s);
         final back = MusicXmlReader.read(xml, id: 'x');
-        print('${f.uri.pathSegments.last}: "${s.title}" ${s.parts.length} partes, ${s.measures.length} compases, '
-            '${s.noteCount} notas, ${t.order.length} compases tocados, ${t.duration.inSeconds}s, '
-            'ida y vuelta ${back.noteCount == s.noteCount ? 'ok' : 'DIFIERE ${back.noteCount}'} (${sw.elapsedMilliseconds} ms)');
+        print(
+          '${f.uri.pathSegments.last}: "${s.title}" ${s.parts.length} partes, ${s.measures.length} compases, '
+          '${s.noteCount} notas, ${t.order.length} compases tocados, ${t.duration.inSeconds}s, '
+          'ida y vuelta ${back.noteCount == s.noteCount ? 'ok' : 'DIFIERE ${back.noteCount}'} (${sw.elapsedMilliseconds} ms)',
+        );
       }
     });
   }

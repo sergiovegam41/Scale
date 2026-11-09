@@ -66,8 +66,8 @@ class _ScorePageState extends State<ScorePage> {
   }();
 
   void _toggleHand((int, int) key) => setState(() {
-        player.muted.contains(key) ? player.muted.remove(key) : player.muted.add(key);
-      });
+    player.muted.contains(key) ? player.muted.remove(key) : player.muted.add(key);
+  });
 
   void _tapNote(String id) {
     final tick = timeline.firstTickOf(id);
@@ -92,9 +92,12 @@ class _ScorePageState extends State<ScorePage> {
           final s = score;
           final rec = s.recording;
           final lines = <String>[
-            if (rec != null)
-              'Grabada a ${rec.settings.bpm.round()} pulsos por minuto en ${rec.settings.time}'
+            if (rec != null && rec.followedMetronome)
+              'Grabada con metrónomo a ${rec.settings.bpm.round()} en ${rec.settings.time}'
                   '${rec.appliedLatencyMicros.abs() >= 1000 ? ', corrigiendo un ${rec.appliedLatencyMicros < 0 ? 'adelanto' : 'retraso'} de ${(rec.appliedLatencyMicros.abs() / 1000).round()} ms' : ''}',
+            if (rec != null && !rec.followedMetronome)
+              'Escrita a tu tempo (unas ${rec.playedQuarterBpm?.round()} negras por minuto); el metrónomo iba a '
+                  '${rec.settings.bpm.round()} en ${rec.settings.time}',
             '${s.parts.length} ${s.parts.length == 1 ? 'parte' : 'partes'} · ${s.measures.length} compases · ${s.noteCount} notas',
             'Duración: ${_clock(timeline.duration)} (${timeline.order.length} compases con repeticiones)',
             if (s.source?.name != null) 'Archivo: ${s.source!.name}',
@@ -135,7 +138,7 @@ class _ScorePageState extends State<ScorePage> {
     if (rec == null) return;
     final settings = await showDialog<TranscriptionSettings>(
       context: context,
-      builder: (_) => _RewriteDialog(settings: rec.settings, applied: rec.appliedLatencyMicros, notation: widget.notation),
+      builder: (_) => _RewriteDialog(recording: rec, notation: widget.notation),
     );
     if (settings == null || !mounted) return;
     setState(() => rewriting = true);
@@ -189,10 +192,7 @@ class _ScorePageState extends State<ScorePage> {
       body: SafeArea(
         child: Column(
           children: [
-            ListenableBuilder(
-              listenable: player,
-              builder: (context, _) => _bar(context, scheme, compact),
-            ),
+            ListenableBuilder(listenable: player, builder: (context, _) => _bar(context, scheme, compact)),
             const Divider(height: 1),
             Expanded(
               child: ScoreViewer(
@@ -210,7 +210,11 @@ class _ScorePageState extends State<ScorePage> {
                 onBench: (b) {
                   setState(() => bench = b);
                   ScaffoldMessenger.of(context).showSnackBar(
-                    SnackBar(content: Text('Desplazamiento: ${b['fps']} cuadros/s, ${b['slow']} lentos, el peor ${b['worstMs']} ms')),
+                    SnackBar(
+                      content: Text(
+                        'Desplazamiento: ${b['fps']} cuadros/s, ${b['slow']} lentos, el peor ${b['worstMs']} ms',
+                      ),
+                    ),
                   );
                 },
               ),
@@ -257,20 +261,13 @@ class _ScorePageState extends State<ScorePage> {
               ],
             ),
           ),
-          IconButton(
-            tooltip: 'Al principio',
-            onPressed: player.stop,
-            icon: const Icon(Icons.skip_previous),
-          ),
+          IconButton(tooltip: 'Al principio', onPressed: player.stop, icon: const Icon(Icons.skip_previous)),
           IconButton.filled(
             tooltip: player.playing ? 'Pausa' : 'Reproducir',
             onPressed: player.toggle,
             icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
           ),
-          TextButton(
-            onPressed: _pickSpeed,
-            child: Text('${(player.speed * 100).round()} %'),
-          ),
+          TextButton(onPressed: _pickSpeed, child: Text('${(player.speed * 100).round()} %')),
           if (player.canPlayAsPlayed && !compact)
             Padding(
               padding: const EdgeInsets.only(left: 4, right: 4),
@@ -307,7 +304,11 @@ class _ScorePageState extends State<ScorePage> {
                 for (final (i, (_, name, key)) in _hands.indexed)
                   CheckedPopupMenuItem(value: 'hand$i', checked: !player.muted.contains(key), child: Text(name)),
                 if (player.canPlayAsPlayed)
-                  CheckedPopupMenuItem(value: 'asPlayed', checked: player.asPlayed, child: const Text('Oír como la toqué')),
+                  CheckedPopupMenuItem(
+                    value: 'asPlayed',
+                    checked: player.asPlayed,
+                    child: const Text('Oír como la toqué'),
+                  ),
               ],
               if (score.recording != null)
                 PopupMenuItem(value: 'rewrite', enabled: !rewriting, child: const Text('Volver a escribir…')),
@@ -322,10 +323,9 @@ class _ScorePageState extends State<ScorePage> {
 
 /// Ajustes para volver a escribir una grabación.
 class _RewriteDialog extends StatefulWidget {
-  const _RewriteDialog({required this.settings, required this.applied, required this.notation});
+  const _RewriteDialog({required this.recording, required this.notation});
 
-  final TranscriptionSettings settings;
-  final int applied;
+  final ScoreRecording recording;
   final Notation notation;
 
   @override
@@ -333,16 +333,22 @@ class _RewriteDialog extends StatefulWidget {
 }
 
 class _RewriteDialogState extends State<_RewriteDialog> {
-  late TranscriptionSettings s = widget.settings;
+  late final TranscriptionSettings original = widget.recording.settings;
+  late TranscriptionSettings s = original;
 
-  /// Tempo escrito respecto al del metrónomo: ½, 1 o 2.
+  /// Pulso escrito respecto al tocado: ½, 1 o 2.
   late double factor = 1;
+
+  static const _meters = [TimeSignature(2, 4), TimeSignature(3, 4), TimeSignature.common, TimeSignature(6, 8)];
 
   @override
   Widget build(BuildContext context) {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
-    final auto = widget.applied - widget.settings.latencyMicros;
+    final rec = widget.recording;
+    final auto = rec.appliedLatencyMicros - original.latencyMicros;
+    final usesMetronome =
+        s.tempoMode == TempoMode.metronome || (s.tempoMode == TempoMode.auto && rec.followedMetronome);
     return AlertDialog(
       title: const Text('Volver a escribir'),
       content: SizedBox(
@@ -357,6 +363,39 @@ class _RewriteDialogState extends State<_RewriteDialog> {
                 style: text.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
               ),
               const SizedBox(height: 16),
+              Text('Pulso', style: text.titleSmall),
+              Text(
+                rec.followedMetronome
+                    ? 'Seguiste el metrónomo (${original.bpm.round()}).'
+                    : 'No seguiste el metrónomo (${original.bpm.round()}): se escribió a tu tempo, '
+                          'unas ${rec.playedQuarterBpm?.round()} negras por minuto.',
+                style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+              ),
+              const SizedBox(height: 6),
+              SegmentedButton<TempoMode>(
+                segments: const [
+                  ButtonSegment(value: TempoMode.auto, label: Text('Automático')),
+                  ButtonSegment(value: TempoMode.metronome, label: Text('Metrónomo')),
+                  ButtonSegment(value: TempoMode.player, label: Text('Mi tempo')),
+                ],
+                selected: {s.tempoMode},
+                onSelectionChanged: (v) => setState(() => s = s.copyWith(tempoMode: v.first)),
+              ),
+              const SizedBox(height: 14),
+              Text('Compás', style: text.titleSmall),
+              const SizedBox(height: 6),
+              SegmentedButton<String>(
+                segments: [
+                  const ButtonSegment(value: 'auto', label: Text('Auto')),
+                  for (final m in _meters) ButtonSegment(value: '$m', label: Text('$m')),
+                ],
+                selected: {s.meter?.toString() ?? 'auto'},
+                onSelectionChanged: (v) => setState(() {
+                  final m = _meters.where((m) => '$m' == v.first).firstOrNull;
+                  s = m == null ? s.copyWith(clearMeter: true) : s.copyWith(meter: m);
+                }),
+              ),
+              const SizedBox(height: 14),
               Text('Figuras más pequeñas', style: text.titleSmall),
               const SizedBox(height: 6),
               SegmentedButton<int>(
@@ -368,18 +407,18 @@ class _RewriteDialogState extends State<_RewriteDialog> {
                 onSelectionChanged: (v) => setState(() => s = s.copyWith(grid: v.first)),
               ),
               const SizedBox(height: 14),
-              Text('Pulso escrito', style: text.titleSmall),
+              Text('Valor de las figuras', style: text.titleSmall),
               const SizedBox(height: 6),
               SegmentedButton<double>(
-                segments: [
-                  ButtonSegment(value: 0.5, label: Text('${(widget.settings.bpm / 2).round()} (figuras largas)')),
-                  ButtonSegment(value: 1, label: Text('${widget.settings.bpm.round()}')),
-                  ButtonSegment(value: 2, label: Text('${(widget.settings.bpm * 2).round()} (figuras cortas)')),
+                segments: const [
+                  ButtonSegment(value: 0.5, label: Text('Más largas')),
+                  ButtonSegment(value: 1, label: Text('Normal')),
+                  ButtonSegment(value: 2, label: Text('Más cortas')),
                 ],
                 selected: {factor},
                 onSelectionChanged: (v) => setState(() {
                   factor = v.first;
-                  s = s.copyWith(bpm: widget.settings.bpm * factor);
+                  s = s.copyWith(bpm: original.bpm * factor);
                 }),
               ),
               SwitchListTile(
@@ -388,31 +427,35 @@ class _RewriteDialogState extends State<_RewriteDialog> {
                 value: s.triplets,
                 onChanged: (v) => setState(() => s = s.copyWith(triplets: v)),
               ),
-              SwitchListTile(
-                contentPadding: EdgeInsets.zero,
-                title: const Text('Corregir mi adelanto o retraso'),
-                subtitle: Text(auto.abs() < 1000
-                    ? 'Tocaste a tiempo con el metrónomo'
-                    : 'Tocaste ${(auto.abs() / 1000).round()} ms ${auto < 0 ? 'antes' : 'después'} del metrónomo'),
-                value: s.autoLatency,
-                onChanged: (v) => setState(() => s = s.copyWith(autoLatency: v)),
-              ),
-              Row(
-                children: [
-                  const Text('Ajuste fino'),
-                  Expanded(
-                    child: Slider(
-                      min: -100,
-                      max: 100,
-                      divisions: 40,
-                      value: (s.latencyMicros / 1000).clamp(-100, 100).toDouble(),
-                      label: '${(s.latencyMicros / 1000).round()} ms',
-                      onChanged: (v) => setState(() => s = s.copyWith(latencyMicros: (v * 1000).round())),
-                    ),
+              if (usesMetronome) ...[
+                SwitchListTile(
+                  contentPadding: EdgeInsets.zero,
+                  title: const Text('Corregir mi adelanto o retraso'),
+                  subtitle: Text(
+                    auto.abs() < 1000
+                        ? 'Tocaste a tiempo con el metrónomo'
+                        : 'Tocaste ${(auto.abs() / 1000).round()} ms ${auto < 0 ? 'antes' : 'después'} del metrónomo',
                   ),
-                  SizedBox(width: 64, child: Text('${(s.latencyMicros / 1000).round()} ms')),
-                ],
-              ),
+                  value: s.autoLatency,
+                  onChanged: (v) => setState(() => s = s.copyWith(autoLatency: v)),
+                ),
+                Row(
+                  children: [
+                    const Text('Ajuste fino'),
+                    Expanded(
+                      child: Slider(
+                        min: -100,
+                        max: 100,
+                        divisions: 40,
+                        value: (s.latencyMicros / 1000).clamp(-100, 100).toDouble(),
+                        label: '${(s.latencyMicros / 1000).round()} ms',
+                        onChanged: (v) => setState(() => s = s.copyWith(latencyMicros: (v * 1000).round())),
+                      ),
+                    ),
+                    SizedBox(width: 64, child: Text('${(s.latencyMicros / 1000).round()} ms')),
+                  ],
+                ),
+              ],
               const SizedBox(height: 8),
               Row(
                 children: [
@@ -427,7 +470,8 @@ class _RewriteDialogState extends State<_RewriteDialog> {
                         for (final k in MusicKey.all)
                           DropdownMenuItem<int?>(value: k.index, child: Text(k.label(widget.notation))),
                       ],
-                      onChanged: (v) => setState(() => s = v == null ? s.copyWith(clearKey: true) : s.copyWith(keyIndex: v)),
+                      onChanged: (v) =>
+                          setState(() => s = v == null ? s.copyWith(clearKey: true) : s.copyWith(keyIndex: v)),
                     ),
                   ),
                 ],

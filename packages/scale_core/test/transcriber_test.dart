@@ -39,30 +39,68 @@ Take takeOf(
   return Take(id: 't', recordedAt: DateTime(2026), events: events);
 }
 
-TranscriptionSettings settingsFor({double bpm = 100, TimeSignature time = TimeSignature.common, bool triplets = true}) =>
-    TranscriptionSettings(bpm: bpm, time: time, startMicros: (4 * 60e6 / bpm).round(), triplets: triplets);
+/// Toma sintética sin metrónomo: [time] da el instante (en µs) de cada
+/// pulso tocado, para simular a alguien que acelera o frena.
+Take takeAt(List<Played> notes, double Function(double beat) time, {double jitterMs = 15, int seed = 3}) {
+  final rnd = math.Random(seed);
+  final events = <MidiEvent>[];
+  for (final (beat, length, midi, velocity) in notes) {
+    final on = time(beat) + (rnd.nextDouble() * 2 - 1) * jitterMs * 1000;
+    final end = time(beat + length);
+    final off = end - (end - on) * 0.12;
+    events
+      ..add(MidiEvent.noteOn(on.round(), midi, velocity: velocity))
+      ..add(MidiEvent.noteOff(off.round(), midi));
+  }
+  events.sort((a, b) => a.timeMicros.compareTo(b.timeMicros));
+  return Take(id: 't', recordedAt: DateTime(2026), events: events);
+}
+
+/// Cumpleaños feliz (3/4, anacrusa de un pulso) en pulsos desde el primer
+/// pulso del compás 1.
+const List<Played> birthday = [
+  (-1, 0.75, 60, 60), (-0.25, 0.25, 60, 55), (0, 1, 62, 70), (1, 1, 60, 65), (2, 1, 65, 70), (3, 2, 64, 70), //
+  (5, 0.75, 60, 60), (5.75, 0.25, 60, 55), (6, 1, 62, 70), (7, 1, 60, 65), (8, 1, 67, 70), (9, 2, 65, 70), //
+  (11, 0.75, 60, 60), (11.75, 0.25, 60, 55), (12, 1, 72, 75), (13, 1, 69, 70), (14, 1, 65, 70), (15, 1, 64, 65),
+  (16, 2, 62, 65), (17.9, 0.1, 62, 0), //
+];
+
+TranscriptionSettings settingsFor({
+  double bpm = 100,
+  TimeSignature time = TimeSignature.common,
+  bool triplets = true,
+}) => TranscriptionSettings(bpm: bpm, time: time, startMicros: (4 * 60e6 / bpm).round(), triplets: triplets);
 
 Score transcribe(Take take, [TranscriptionSettings? s]) =>
     PerformanceTranscriber.transcribe(take, s ?? settingsFor(), id: 'x', title: 'Prueba')!;
 
 /// "Figura@pulso:alturas" de los eventos de un pentagrama, para comparar.
 List<String> staffOf(Score s, int staff) => [
-      for (final e in s.parts.single.events)
-        if (e.staff == staff)
-          '${e.isRest ? 'r' : ''}${e.type?.musicXml ?? 'measure'}${'.' * e.dots}'
-              '${e.tuplet != null ? '3' : ''}@${e.tick / ticksPerQuarter}'
-              '${e.isRest ? '' : ':${e.notes.map((n) => '${n.spelling.name()}${n.octave}${n.tieStart ? '~' : ''}').join(',')}'}',
-    ];
+  for (final e in s.parts.single.events)
+    if (e.staff == staff)
+      '${e.isRest ? 'r' : ''}${e.type?.musicXml ?? 'measure'}${'.' * e.dots}'
+          '${e.tuplet != null ? '3' : ''}@${e.tick / ticksPerQuarter}'
+          '${e.isRest ? '' : ':${e.notes.map((n) => '${n.spelling.name()}${n.octave}${n.tieStart ? '~' : ''}').join(',')}'}',
+];
 
 void main() {
   test('melodía y bajo: figuras, manos, compases y silencios', () {
-    final s = transcribe(takeOf([
-      (0, 1, 60, 70), (1, 1, 62, 72), (2, 1, 64, 74), (3, 1, 65, 76), (4, 2, 67, 80), //
-      (0, 4, 48, 60), (4, 2, 43, 60),
-    ]));
+    final s = transcribe(
+      takeOf([
+        (0, 1, 60, 70), (1, 1, 62, 72), (2, 1, 64, 74), (3, 1, 65, 76), (4, 2, 67, 80), //
+        (0, 4, 48, 60), (4, 2, 43, 60),
+      ]),
+    );
     expect(s.measures.length, 2);
     expect(s.measures.first.tempo, 100);
-    expect(staffOf(s, 1), ['quarter@0.0:C4', 'quarter@1.0:D4', 'quarter@2.0:E4', 'quarter@3.0:F4', 'half@4.0:G4', 'rhalf@6.0']);
+    expect(staffOf(s, 1), [
+      'quarter@0.0:C4',
+      'quarter@1.0:D4',
+      'quarter@2.0:E4',
+      'quarter@3.0:F4',
+      'half@4.0:G4',
+      'rhalf@6.0',
+    ]);
     expect(staffOf(s, 2), ['whole@0.0:C3', 'half@4.0:G2', 'rhalf@6.0']);
   });
 
@@ -96,15 +134,17 @@ void main() {
   });
 
   test('tresillos de corchea', () {
-    final s = transcribe(takeOf([
-      (0, 1 / 3, 60, 70), (1 / 3, 1 / 3, 62, 70), (2 / 3, 1 / 3, 64, 70), (1, 1, 65, 70), (2, 2, 67, 70),
-    ]));
+    final s = transcribe(
+      takeOf([(0, 1 / 3, 60, 70), (1 / 3, 1 / 3, 62, 70), (2 / 3, 1 / 3, 64, 70), (1, 1, 65, 70), (2, 2, 67, 70)]),
+    );
     final rh = staffOf(s, 1);
     expect(rh.take(3), ['eighth3@0.0:C4', 'eighth3@0.3333333333333333:D4', 'eighth3@0.6666666666666666:E4']);
     expect(rh.skip(3), ['quarter@1.0:F4', 'half@2.0:G4']);
     // Sin tresillos se aproximan a semicorcheas.
-    final plain = transcribe(takeOf([(0, 1 / 3, 60, 70), (1 / 3, 1 / 3, 62, 70), (2 / 3, 1 / 3, 64, 70), (1, 3, 65, 70)]),
-        settingsFor(triplets: false));
+    final plain = transcribe(
+      takeOf([(0, 1 / 3, 60, 70), (1 / 3, 1 / 3, 62, 70), (2 / 3, 1 / 3, 64, 70), (1, 3, 65, 70)]),
+      settingsFor(triplets: false),
+    );
     expect(staffOf(plain, 1).any((e) => e.contains('3@')), isFalse);
   });
 
@@ -122,10 +162,12 @@ void main() {
   });
 
   test('acordes: notas juntas en un evento y reparto por registro', () {
-    final s = transcribe(takeOf([
-      (0, 2, 60, 70), (0, 2, 64, 70), (0, 2, 67, 70), (0, 2, 36, 70), (0, 2, 43, 70), //
-      (2, 2, 59, 70), (2, 2, 62, 70), (2, 2, 67, 70), (2, 2, 43, 70),
-    ]));
+    final s = transcribe(
+      takeOf([
+        (0, 2, 60, 70), (0, 2, 64, 70), (0, 2, 67, 70), (0, 2, 36, 70), (0, 2, 43, 70), //
+        (2, 2, 59, 70), (2, 2, 62, 70), (2, 2, 67, 70), (2, 2, 43, 70),
+      ]),
+    );
     expect(staffOf(s, 1), ['half@0.0:C4,E4,G4', 'half@2.0:B3,D4,G4']);
     expect(staffOf(s, 2), ['half@0.0:C2,G2', 'half@2.0:G2']);
   });
@@ -133,7 +175,12 @@ void main() {
   test('ortografía según la tonalidad estimada', () {
     // Progresión clara en E mayor: el pc 8 debe escribirse G#, no Ab.
     final notes = <Played>[];
-    final chords = [[52, 56, 59], [57, 61, 64], [59, 63, 66], [52, 56, 59]];
+    final chords = [
+      [52, 56, 59],
+      [57, 61, 64],
+      [59, 63, 66],
+      [52, 56, 59],
+    ];
     for (final (i, c) in chords.indexed) {
       for (final m in c) {
         notes.add((i * 4.0, 4, m + 12, 70));
@@ -142,7 +189,10 @@ void main() {
     }
     final s = transcribe(takeOf(notes));
     expect(s.measures.first.fifths, 4);
-    final names = [for (final e in s.parts.single.events) for (final n in e.notes) n.spelling.name()];
+    final names = [
+      for (final e in s.parts.single.events)
+        for (final n in e.notes) n.spelling.name(),
+    ];
     expect(names, contains('G#'));
     expect(names, isNot(contains('Ab')));
   });
@@ -173,9 +223,9 @@ void main() {
   });
 
   test('se puede exportar, guardar y reproducir', () {
-    final s = transcribe(takeOf([
-      (0, 1.5, 60, 70), (1.5, 0.5, 62, 70), (2, 3, 64, 70), (5, 1, 65, 70), (6, 2, 67, 70), (0, 8, 48, 60),
-    ]));
+    final s = transcribe(
+      takeOf([(0, 1.5, 60, 70), (1.5, 0.5, 62, 70), (2, 3, 64, 70), (5, 1, 65, 70), (6, 2, 67, 70), (0, 8, 48, 60)]),
+    );
     final back = MusicXmlReader.read(MusicXmlWriter.write(s), id: 'x');
     expect(back.noteCount, s.noteCount);
     final json = Score.fromJson(jsonDecode(jsonEncode(s.toJson())) as Map<String, dynamic>);
@@ -185,10 +235,77 @@ void main() {
     expect(ScoreTimeline.of(s).notes.length, 6);
   });
 
+  test('sin seguir el metrónomo: se escribe al tempo y compás de quien toca', () {
+    // Metrónomo a 80 en 4/4, pero se tocó a 100 y la canción es en 3/4.
+    final notes = [
+      for (final n in birthday)
+        if (n.$4 > 0) n,
+    ];
+    final take = takeAt(notes, (b) => 3e6 + (b + 1) * 600000);
+    final s = transcribe(take, settingsFor(bpm: 80));
+    expect(s.recording!.followedMetronome, isFalse);
+    expect(s.measures.first.time, const TimeSignature(3, 4));
+    expect(s.measures.first.tempo, 100);
+    expect(s.measures.first.implicit, isTrue);
+    expect(s.measures.first.length, ticksPerQuarter);
+    final rh = staffOf(s, 1);
+    expect(rh.take(8), [
+      'eighth.@0.0:C4', '16th@0.75:C4', 'quarter@1.0:D4', 'quarter@2.0:C4', 'quarter@3.0:F4', 'half@4.0:E4', //
+      'eighth.@6.0:C4', '16th@6.75:C4',
+    ]);
+    expect(rh.where((e) => e.startsWith('r')), isEmpty, reason: rh.join(' '));
+    // El cursor de "como la toqué" sigue los pulsos de quien tocó.
+    final rec = s.recording!;
+    expect(rec.microsAt(ticksPerQuarter, 0), closeTo(3.6e6, 20000));
+    expect(rec.tickAt(rec.microsAt(5 * ticksPerQuarter, 0).round(), 0), closeTo(5 * ticksPerQuarter, 1));
+    // Con el compás fijado se respeta.
+    final fixed = transcribe(take, settingsFor(bpm: 80).copyWith(meter: TimeSignature.common));
+    expect(fixed.measures.first.time, TimeSignature.common);
+  });
+
+  test('quien acelera poco a poco: los pulsos lo siguen', () {
+    // Estrellita (4/4), de 90 a 115 por minuto.
+    const tune = [60, 60, 67, 67, 69, 69, 67, 0, 65, 65, 64, 64, 62, 62, 60, 0, 67, 67, 65, 65, 64, 64, 62, 0];
+    final notes = <Played>[
+      for (final (i, m) in tune.indexed)
+        if (m != 0) (i.toDouble(), i + 1 < tune.length && tune[i + 1] == 0 ? 2.0 : 1.0, m, 70),
+    ];
+    double time(double b) {
+      // El pulso pasa de 667 ms a 522 ms de forma continua.
+      const p0 = 60e6 / 90;
+      const p1 = 60e6 / 115;
+      final k = (p1 - p0) / 24;
+      return 2e6 + p0 * b + k * b * b / 2;
+    }
+
+    final s = transcribe(takeAt(notes, time), settingsFor(bpm: 90));
+    expect(s.recording!.followedMetronome, isFalse);
+    expect(s.measures.first.time, TimeSignature.common);
+    expect(s.measures.first.implicit, isFalse);
+    final rh = staffOf(s, 1);
+    expect(rh.every((e) => e.startsWith('quarter') || e.startsWith('half')), isTrue, reason: rh.join(' '));
+    expect(rh.where((e) => e.startsWith('half')).map((e) => e.split('@')[1].split(':')[0]), ['6.0', '14.0', '22.0']);
+  });
+
+  test('siguiendo el metrónomo se escribe sobre su pulso', () {
+    final notes = [
+      for (final n in birthday)
+        if (n.$4 > 0) (n.$1 + 1, n.$2, n.$3, n.$4),
+    ];
+    final s = transcribe(takeOf(notes, bpm: 90, jitterMs: 20), settingsFor(bpm: 90, time: const TimeSignature(3, 4)));
+    expect(s.recording!.followedMetronome, isTrue);
+    expect(s.measures.first.tempo, 90);
+    expect(s.measures.first.time, const TimeSignature(3, 4));
+  });
+
   test('sin notas no hay partitura', () {
     expect(
-      PerformanceTranscriber.transcribe(Take(id: 't', recordedAt: DateTime(2026), events: []), settingsFor(),
-          id: 'x', title: 'x'),
+      PerformanceTranscriber.transcribe(
+        Take(id: 't', recordedAt: DateTime(2026), events: []),
+        settingsFor(),
+        id: 'x',
+        title: 'x',
+      ),
       isNull,
     );
   });

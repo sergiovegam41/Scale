@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -75,6 +76,11 @@ class _ScoreViewerState extends State<ScoreViewer> {
   bool _ready = false;
   String? _error;
 
+  /// Si el motor no arranca (a veces pasa al abrir una partitura justo
+  /// tras cerrar otra), se recarga la página.
+  Timer? _watchdog;
+  int _reloads = 0;
+
   @override
   void initState() {
     super.initState();
@@ -103,6 +109,7 @@ class _ScoreViewerState extends State<ScoreViewer> {
 
   @override
   void dispose() {
+    _watchdog?.cancel();
     _win?.dispose();
     widget.lit.removeListener(_onLit);
     if (widget.controller?._state == this) widget.controller?._state = null;
@@ -124,6 +131,7 @@ class _ScoreViewerState extends State<ScoreViewer> {
     switch (name) {
       case 'ready':
         _ready = true;
+        _watchdog?.cancel();
         _load();
       case 'loaded':
         widget.onLoaded?.call(ViewerInfo(map));
@@ -185,7 +193,21 @@ class _ScoreViewerState extends State<ScoreViewer> {
       ..setOnConsoleMessage((m) => debugPrint('Visor JS: ${m.message}'))
       ..loadRequest(server.viewerUrl);
     _eval = c.runJavaScript;
+    _watch(c.reload);
     return WebViewWidget(controller: c);
+  }
+
+  void _watch(Future<void> Function() reload) {
+    if (_watchdog != null || _ready) return;
+    _watchdog = Timer.periodic(const Duration(seconds: 6), (t) {
+      if (_ready || _reloads >= 3) {
+        t.cancel();
+        return;
+      }
+      _reloads++;
+      debugPrint('Visor: el motor no arrancó; recargando ($_reloads)');
+      reload();
+    });
   }
 
   /// Windows: WebView2 a través de flutter_inappwebview (solo su parte de Windows).

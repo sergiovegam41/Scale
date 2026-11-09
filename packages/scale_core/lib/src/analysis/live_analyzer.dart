@@ -63,10 +63,7 @@ class LiveAnalyzer {
   void _updateKey() {
     key = KeyEstimator.fromChords(
       chords.map((c) => c.chord),
-      weights: [
-        for (final c in chords)
-          durationWeight(c.endMicros == null ? null : c.endMicros! - c.startMicros),
-      ],
+      weights: [for (final c in chords) durationWeight(c.endMicros == null ? null : c.endMicros! - c.startMicros)],
     );
     if (!key.isEmpty && key.confidence >= confirmThreshold) {
       final confirmed = _confirmedKey;
@@ -75,8 +72,6 @@ class LiveAnalyzer {
     }
     final k = key.key;
     final confidence = key.confidence;
-    detector.prior = confidence >= confirmThreshold
-        ? (chord) => 0.25 * confidence * KeyModel.weight(chord, k)
-        : null;
+    detector.prior = confidence >= confirmThreshold ? (chord) => 0.25 * confidence * KeyModel.weight(chord, k) : null;
   }
 }

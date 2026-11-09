@@ -30,11 +30,9 @@ enum FollowStatus {
 /// worship se repite el coro de improviso). Si no hay nada claro, espera.
 class SongFollower {
   SongFollower(Song song)
-      : chords = [for (final c in song.chords) c.chord],
-        _durations = [for (final c in song.chords) c.durationMicros],
-        _starts = {
-          for (final o in song.arrangement) o.start,
-        }..remove(null);
+    : chords = [for (final c in song.chords) c.chord],
+      _durations = [for (final c in song.chords) c.durationMicros],
+      _starts = {for (final o in song.arrangement) o.start}..remove(null);
 
   /// Fracción de la duración grabada de un acorde tras la cual volver a
   /// atacarlo cuenta como el siguiente, si el siguiente es el mismo acorde
@@ -95,8 +93,7 @@ class SongFollower {
     // Volver a tocar el acorde actual (ritmo) no cambia nada, salvo que se
     // parezca más al siguiente (D → Dsus4), se acabe de saltar a mano o el
     // siguiente sea el mismo acorde y ya haya pasado su tiempo.
-    if (toCurrent > 0 &&
-        !(matchesNext && (_jumped || toNext > toCurrent || _currentIsDue(atMicros)))) {
+    if (toCurrent > 0 && !(matchesNext && (_jumped || toNext > toCurrent || _currentIsDue(atMicros)))) {
       return status;
     }
     _jumped = false;

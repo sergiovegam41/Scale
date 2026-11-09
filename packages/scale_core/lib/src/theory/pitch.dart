@@ -97,8 +97,7 @@ class SpelledNote {
   }
 
   @override
-  bool operator ==(Object other) =>
-      other is SpelledNote && other.letter == letter && other.accidental == accidental;
+  bool operator ==(Object other) => other is SpelledNote && other.letter == letter && other.accidental == accidental;
 
   @override
   int get hashCode => Object.hash(letter, accidental);

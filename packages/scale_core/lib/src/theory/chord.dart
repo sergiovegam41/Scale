@@ -21,14 +21,7 @@ enum TriadFamily {
 
 /// Tipo de acorde: intervalos desde la fundamental y su sufijo de cifrado.
 class ChordQuality {
-  const ChordQuality._(
-    this.id,
-    this.symbol,
-    this.intervals,
-    this.family,
-    this.complexity, {
-    this.dominant = false,
-  });
+  const ChordQuality._(this.id, this.symbol, this.intervals, this.family, this.complexity, {this.dominant = false});
 
   /// Identificador estable para persistir (no cambia aunque cambie el sufijo).
   final String id;
@@ -55,32 +48,52 @@ class ChordQuality {
   static const power = ChordQuality._('5', '5', [0, 7], TriadFamily.power, 0.3);
   static const sixth = ChordQuality._('6', '6', [0, 4, 7, 9], TriadFamily.major, 0.25);
   static const minorSixth = ChordQuality._('m6', 'm6', [0, 3, 7, 9], TriadFamily.minor, 0.3);
-  static const dominant7 =
-      ChordQuality._('7', '7', [0, 4, 7, 10], TriadFamily.major, 0.1, dominant: true);
+  static const dominant7 = ChordQuality._('7', '7', [0, 4, 7, 10], TriadFamily.major, 0.1, dominant: true);
   static const major7 = ChordQuality._('maj7', 'maj7', [0, 4, 7, 11], TriadFamily.major, 0.15);
   static const minor7 = ChordQuality._('m7', 'm7', [0, 3, 7, 10], TriadFamily.minor, 0.1);
-  static const minorMajor7 =
-      ChordQuality._('mMaj7', 'm(maj7)', [0, 3, 7, 11], TriadFamily.minor, 0.5);
-  static const halfDiminished =
-      ChordQuality._('m7b5', 'm7b5', [0, 3, 6, 10], TriadFamily.diminished, 0.3);
-  static const diminished7 =
-      ChordQuality._('dim7', 'dim7', [0, 3, 6, 9], TriadFamily.diminished, 0.4);
-  static const dominant7sus4 =
-      ChordQuality._('7sus4', '7sus4', [0, 5, 7, 10], TriadFamily.suspended, 0.2, dominant: true);
+  static const minorMajor7 = ChordQuality._('mMaj7', 'm(maj7)', [0, 3, 7, 11], TriadFamily.minor, 0.5);
+  static const halfDiminished = ChordQuality._('m7b5', 'm7b5', [0, 3, 6, 10], TriadFamily.diminished, 0.3);
+  static const diminished7 = ChordQuality._('dim7', 'dim7', [0, 3, 6, 9], TriadFamily.diminished, 0.4);
+  static const dominant7sus4 = ChordQuality._(
+    '7sus4',
+    '7sus4',
+    [0, 5, 7, 10],
+    TriadFamily.suspended,
+    0.2,
+    dominant: true,
+  );
   static const add9 = ChordQuality._('add9', 'add9', [0, 2, 4, 7], TriadFamily.major, 0.15);
-  static const minorAdd9 =
-      ChordQuality._('madd9', 'm(add9)', [0, 2, 3, 7], TriadFamily.minor, 0.2);
-  static const dominant9 =
-      ChordQuality._('9', '9', [0, 2, 4, 7, 10], TriadFamily.major, 0.25, dominant: true);
+  static const minorAdd9 = ChordQuality._('madd9', 'm(add9)', [0, 2, 3, 7], TriadFamily.minor, 0.2);
+  static const dominant9 = ChordQuality._('9', '9', [0, 2, 4, 7, 10], TriadFamily.major, 0.25, dominant: true);
   static const major9 = ChordQuality._('maj9', 'maj9', [0, 2, 4, 7, 11], TriadFamily.major, 0.3);
   static const minor9 = ChordQuality._('m9', 'm9', [0, 2, 3, 7, 10], TriadFamily.minor, 0.25);
   static const sixNine = ChordQuality._('69', '6/9', [0, 2, 4, 7, 9], TriadFamily.major, 0.35);
   static const add4 = ChordQuality._('add4', 'add4', [0, 4, 5, 7], TriadFamily.major, 0.35);
 
   static const List<ChordQuality> all = [
-    major, minor, diminished, augmented, sus2, sus4, power, sixth, minorSixth,
-    dominant7, major7, minor7, minorMajor7, halfDiminished, diminished7,
-    dominant7sus4, add9, minorAdd9, dominant9, major9, minor9, sixNine, add4,
+    major,
+    minor,
+    diminished,
+    augmented,
+    sus2,
+    sus4,
+    power,
+    sixth,
+    minorSixth,
+    dominant7,
+    major7,
+    minor7,
+    minorMajor7,
+    halfDiminished,
+    diminished7,
+    dominant7sus4,
+    add9,
+    minorAdd9,
+    dominant9,
+    major9,
+    minor9,
+    sixNine,
+    add4,
   ];
 
   static final Map<String, ChordQuality> _byId = {for (final q in all) q.id: q};
@@ -95,14 +108,14 @@ class ChordQuality {
 /// de altura (0..11). El nombre (F# o Gb, Re o D) se decide al mostrarlo.
 class Chord {
   Chord(int root, this.quality, {int? bass})
-      : root = root % 12,
-        bass = (bass == null || bass % 12 == root % 12) ? null : bass % 12;
+    : root = root % 12,
+      bass = (bass == null || bass % 12 == root % 12) ? null : bass % 12;
 
   factory Chord.fromJson(Map<String, dynamic> json) => Chord(
-        json['root'] as int,
-        ChordQuality.byId(json['quality'] as String) ?? ChordQuality.major,
-        bass: json['bass'] as int?,
-      );
+    json['root'] as int,
+    ChordQuality.byId(json['quality'] as String) ?? ChordQuality.major,
+    bass: json['bass'] as int?,
+  );
 
   final int root;
   final ChordQuality quality;
@@ -114,10 +127,7 @@ class Chord {
 
   Set<int> get pitchClasses {
     final b = bass;
-    return {
-      for (final i in quality.intervals) (root + i) % 12,
-      if (b != null) b,
-    };
+    return {for (final i in quality.intervals) (root + i) % 12, if (b != null) b};
   }
 
   Chord transpose(int semitones) {
@@ -127,14 +137,9 @@ class Chord {
 
   /// Coincidencia flexible: misma fundamental y familia compatible
   /// (Gadd9, G/B y G7 valen como G).
-  bool matchesFlexibly(Chord other) =>
-      root == other.root && quality.family.compatibleWith(other.quality.family);
+  bool matchesFlexibly(Chord other) => root == other.root && quality.family.compatibleWith(other.quality.family);
 
-  Map<String, dynamic> toJson() => {
-        'root': root,
-        'quality': quality.id,
-        if (bass != null) 'bass': bass,
-      };
+  Map<String, dynamic> toJson() => {'root': root, 'quality': quality.id, if (bass != null) 'bass': bass};
 
   @override
   bool operator ==(Object other) =>

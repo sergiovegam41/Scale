@@ -12,12 +12,12 @@ class NoteSpectrum {
     this.minMidi = 36,
     this.maxMidi = 96,
     this.rowsPerSemitone = 4,
-  })  : assert(size & (size - 1) == 0, 'el tamaño debe ser potencia de 2'),
-        _window = Float64List.fromList([
-          for (var i = 0; i < size; i++) 0.5 - 0.5 * math.cos(2 * math.pi * i / (size - 1)),
-        ]),
-        _re = Float64List(size),
-        _im = Float64List(size);
+  }) : assert(size & (size - 1) == 0, 'el tamaño debe ser potencia de 2'),
+       _window = Float64List.fromList([
+         for (var i = 0; i < size; i++) 0.5 - 0.5 * math.cos(2 * math.pi * i / (size - 1)),
+       ]),
+       _re = Float64List(size),
+       _im = Float64List(size);
 
   final int sampleRate;
 

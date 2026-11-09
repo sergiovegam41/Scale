@@ -55,9 +55,7 @@ class Scale {
   SpelledNote spell(int pc) => spellingKey.spell(pc);
 
   /// Grado de cada nota respecto de la escala mayor: 1 2 ♭3 4 5 6 ♭7.
-  List<String> get degreeLabels => [
-        for (final i in shape.intervals) _degreeLabel(i),
-      ];
+  List<String> get degreeLabels => [for (final i in shape.intervals) _degreeLabel(i)];
 
   static String _degreeLabel(int interval) {
     // El grado más cercano de la mayor, con su alteración.
@@ -78,17 +76,18 @@ class Scale {
     final n = notes;
     if (n.length != 7) return const [];
     return [
-      for (var i = 0; i < 7; i++) Chord(n[i], _triadQuality((n[(i + 2) % 7] - n[i]) % 12, (n[(i + 4) % 7] - n[i]) % 12)),
+      for (var i = 0; i < 7; i++)
+        Chord(n[i], _triadQuality((n[(i + 2) % 7] - n[i]) % 12, (n[(i + 4) % 7] - n[i]) % 12)),
     ];
   }
 
   static ChordQuality _triadQuality(int third, int fifth) => switch ((third, fifth)) {
-        (4, 7) => ChordQuality.major,
-        (3, 7) => ChordQuality.minor,
-        (3, 6) => ChordQuality.diminished,
-        (4, 8) => ChordQuality.augmented,
-        _ => ChordQuality.major,
-      };
+    (4, 7) => ChordQuality.major,
+    (3, 7) => ChordQuality.minor,
+    (3, 6) => ChordQuality.diminished,
+    (4, 8) => ChordQuality.augmented,
+    _ => ChordQuality.major,
+  };
 
   /// Acorde de séptima de cada grado (Cmaj7 Dm7 Em7 Fmaj7 G7 Am7 Bm7b5).
   List<Chord> get sevenths {
@@ -96,43 +95,48 @@ class Scale {
     if (n.length != 7) return const [];
     return [
       for (var i = 0; i < 7; i++)
-        Chord(
-          n[i],
-          switch (((n[(i + 2) % 7] - n[i]) % 12, (n[(i + 4) % 7] - n[i]) % 12, (n[(i + 6) % 7] - n[i]) % 12)) {
-            (4, 7, 11) => ChordQuality.major7,
-            (4, 7, 10) => ChordQuality.dominant7,
-            (3, 7, 10) => ChordQuality.minor7,
-            (3, 7, 11) => ChordQuality.minorMajor7,
-            (3, 6, 10) => ChordQuality.halfDiminished,
-            (3, 6, 9) => ChordQuality.diminished7,
-            _ => ChordQuality.augmented,
-          },
-        ),
+        Chord(n[i], switch ((
+          (n[(i + 2) % 7] - n[i]) % 12,
+          (n[(i + 4) % 7] - n[i]) % 12,
+          (n[(i + 6) % 7] - n[i]) % 12,
+        )) {
+          (4, 7, 11) => ChordQuality.major7,
+          (4, 7, 10) => ChordQuality.dominant7,
+          (3, 7, 10) => ChordQuality.minor7,
+          (3, 7, 11) => ChordQuality.minorMajor7,
+          (3, 6, 10) => ChordQuality.halfDiminished,
+          (3, 6, 9) => ChordQuality.diminished7,
+          _ => ChordQuality.augmented,
+        }),
     ];
   }
 
   /// Cifrado romano de cada séptima: Imaj7 ii7 iii7 IVmaj7 V7 vi7 viiø7.
   List<String> get seventhRomans => [
-        for (final (i, chord) in sevenths.indexed)
-          switch (chord.quality) {
-            ChordQuality.halfDiminished => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.minor)}ø7',
-            ChordQuality.diminished7 => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.diminished)}7',
-            ChordQuality.major7 => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.major)}maj7',
-            ChordQuality.minorMajor7 => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.minor)}(maj7)',
-            ChordQuality.augmented => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.augmented)}maj7',
-            final q => '${romanOf(i, (chord.root - tonic) % 12, q)}7',
-          },
-      ];
+    for (final (i, chord) in sevenths.indexed)
+      switch (chord.quality) {
+        ChordQuality.halfDiminished => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.minor)}ø7',
+        ChordQuality.diminished7 => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.diminished)}7',
+        ChordQuality.major7 => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.major)}maj7',
+        ChordQuality.minorMajor7 => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.minor)}(maj7)',
+        ChordQuality.augmented => '${romanOf(i, (chord.root - tonic) % 12, ChordQuality.augmented)}maj7',
+        final q => '${romanOf(i, (chord.root - tonic) % 12, q)}7',
+      },
+  ];
 
   /// Cifrado romano de cada tríada: I ii iii IV V vi vii° (con ♭ si el grado
   /// está bajado respecto de la mayor: ♭III, ♭VII).
   List<String> get romans => [
-        for (final (i, chord) in triads.indexed) romanOf(i, (chord.root - tonic) % 12, chord.quality),
-      ];
+    for (final (i, chord) in triads.indexed) romanOf(i, (chord.root - tonic) % 12, chord.quality),
+  ];
 
   static String romanOf(int degree, int interval, ChordQuality quality) {
     final diff = interval - _major[degree];
-    final accidental = diff == -1 ? '♭' : diff == 1 ? '♯' : '';
+    final accidental = diff == -1
+        ? '♭'
+        : diff == 1
+        ? '♯'
+        : '';
     final family = quality.family;
     final upper = family != TriadFamily.minor && family != TriadFamily.diminished;
     final numeral = upper ? _numerals[degree] : _numerals[degree].toLowerCase();
@@ -205,28 +209,28 @@ class RomanProgression {
     final quality = half
         ? ChordQuality.halfDiminished
         : dim
-            ? (ext == '7' ? ChordQuality.diminished7 : ChordQuality.diminished)
-            : aug
-                ? ChordQuality.augmented
-                : upper
-                    ? switch (ext) {
-                        '7' => ChordQuality.dominant7,
-                        'maj7' => ChordQuality.major7,
-                        '9' => ChordQuality.dominant9,
-                        '6' => ChordQuality.sixth,
-                        'add9' => ChordQuality.add9,
-                        'sus4' => ChordQuality.sus4,
-                        'sus2' => ChordQuality.sus2,
-                        _ => ChordQuality.major,
-                      }
-                    : switch (ext) {
-                        '7' => ChordQuality.minor7,
-                        'maj7' => ChordQuality.minorMajor7,
-                        '9' => ChordQuality.minor9,
-                        '6' => ChordQuality.minorSixth,
-                        'add9' => ChordQuality.minorAdd9,
-                        _ => ChordQuality.minor,
-                      };
+        ? (ext == '7' ? ChordQuality.diminished7 : ChordQuality.diminished)
+        : aug
+        ? ChordQuality.augmented
+        : upper
+        ? switch (ext) {
+            '7' => ChordQuality.dominant7,
+            'maj7' => ChordQuality.major7,
+            '9' => ChordQuality.dominant9,
+            '6' => ChordQuality.sixth,
+            'add9' => ChordQuality.add9,
+            'sus4' => ChordQuality.sus4,
+            'sus2' => ChordQuality.sus2,
+            _ => ChordQuality.major,
+          }
+        : switch (ext) {
+            '7' => ChordQuality.minor7,
+            'maj7' => ChordQuality.minorMajor7,
+            '9' => ChordQuality.minor9,
+            '6' => ChordQuality.minorSixth,
+            'add9' => ChordQuality.minorAdd9,
+            _ => ChordQuality.minor,
+          };
     return Chord(tonic + _major[degree] + accidental, quality);
   }
 }

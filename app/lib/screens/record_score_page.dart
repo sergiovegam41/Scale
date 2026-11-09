@@ -144,6 +144,18 @@ class _RecordScorePageState extends State<RecordScorePage> {
       if (song.chords.isNotEmpty) await widget.songs.save(song);
     }
     if (!mounted) return;
+    final rec = score.recording;
+    if (rec != null && !rec.followedMetronome) {
+      messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 6),
+          content: Text(
+            'No seguiste el metrónomo: la escribí a tu tempo (unas ${rec.playedQuarterBpm?.round()} negras por minuto) '
+            'en ${score.measures.first.time}. Puedes cambiarlo en "Volver a escribir".',
+          ),
+        ),
+      );
+    }
     navigator.pushReplacement(
       MaterialPageRoute(
         builder: (_) => ScorePage(score: score, midi: widget.midi, repo: widget.scores, notation: widget.notation),
@@ -157,23 +169,20 @@ class _RecordScorePageState extends State<RecordScorePage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Grabar partitura'),
-        automaticallyImplyLeading: stage != _Stage.recording,
-      ),
+      appBar: AppBar(title: const Text('Grabar partitura'), automaticallyImplyLeading: stage != _Stage.recording),
       body: SafeArea(
         child: switch (stage) {
           _Stage.setup => _setup(context),
           _Stage.recording => ListenableBuilder(
-              listenable: Listenable.merge([metronome, widget.keyboard]),
-              builder: (context, _) => _recording(context),
-            ),
+            listenable: Listenable.merge([metronome, widget.keyboard]),
+            builder: (context, _) => _recording(context),
+          ),
           _Stage.writing => const Center(
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Escribiendo la partitura…')],
-              ),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [CircularProgressIndicator(), SizedBox(height: 16), Text('Escribiendo la partitura…')],
             ),
+          ),
         },
       ),
     );
@@ -183,7 +192,9 @@ class _RecordScorePageState extends State<RecordScorePage> {
     final text = Theme.of(context).textTheme;
     final scheme = Theme.of(context).colorScheme;
     final connected = widget.midi.connected != null;
-    final unit = pulseQuarters(metronome.time) == 1.5 ? 'negra con puntillo' : (metronome.time.beatType == 2 ? 'blanca' : 'negra');
+    final unit = pulseQuarters(metronome.time) == 1.5
+        ? 'negra con puntillo'
+        : (metronome.time.beatType == 2 ? 'blanca' : 'negra');
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(16),
@@ -233,7 +244,9 @@ class _RecordScorePageState extends State<RecordScorePage> {
               SwitchListTile(
                 contentPadding: EdgeInsets.zero,
                 title: const Text('Metrónomo en el piano'),
-                subtitle: Text(connected ? 'Suena por el canal de percusión' : 'Piano no conectado: solo se ve en pantalla'),
+                subtitle: Text(
+                  connected ? 'Suena por el canal de percusión' : 'Piano no conectado: solo se ve en pantalla',
+                ),
                 value: metronome.sound,
                 onChanged: (v) => setState(() => metronome.sound = v),
               ),
@@ -287,7 +300,10 @@ class _RecordScorePageState extends State<RecordScorePage> {
       ],
     );
     final status = counting
-        ? Text(m.pulse < 0 ? 'Prepárate…' : '${m.countdown}', style: text.displayMedium?.copyWith(color: scheme.tertiary))
+        ? Text(
+            m.pulse < 0 ? 'Prepárate…' : '${m.countdown}',
+            style: text.displayMedium?.copyWith(color: scheme.tertiary),
+          )
         : Text('Compás ${m.bar}', style: text.displaySmall);
     final held = widget.keyboard.held.keys.toList();
     final compact = context.isCompact;
@@ -299,7 +315,9 @@ class _RecordScorePageState extends State<RecordScorePage> {
           const SizedBox(height: 12),
           status,
           Text(
-            counting ? 'Cuenta: empieza a tocar en el primer pulso del compás 1' : '● Grabando · ${m.bpm.round()} · ${m.time}',
+            counting
+                ? 'Cuenta: empieza a tocar en el primer pulso del compás 1'
+                : '● Grabando · ${m.bpm.round()} · ${m.time}',
             style: text.bodyLarge?.copyWith(color: counting ? scheme.onSurfaceVariant : const Color(0xFFE53935)),
           ),
           const SizedBox(height: 12),
@@ -308,7 +326,9 @@ class _RecordScorePageState extends State<RecordScorePage> {
               child: Padding(
                 padding: const EdgeInsets.all(12),
                 child: held.isEmpty
-                    ? Center(child: Text('Lo que toques aparece aquí', style: TextStyle(color: scheme.onSurfaceVariant)))
+                    ? Center(
+                        child: Text('Lo que toques aparece aquí', style: TextStyle(color: scheme.onSurfaceVariant)),
+                      )
                     : GrandStaff(notes: held),
               ),
             ),

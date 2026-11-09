@@ -4,35 +4,35 @@ import 'package:test/test.dart';
 const fmt = ChordFormatter();
 
 Map<String, dynamic> draftJson() => {
-      'title': 'Santo',
-      'key': 'G',
-      'sections': [
-        {
-          'label': 'Verso',
-          'kind': 'verse',
-          'repeats': 2,
-          'chords': [
-            {'symbol': 'G', 'beats': 4},
-            {'symbol': 'D/F#', 'beats': 4},
-            {'symbol': 'Em7', 'beats': 0},
-            {'symbol': 'C', 'beats': 0},
-          ],
-        },
-        {
-          'label': 'Coro',
-          'kind': 'chorus',
-          'repeats': 1,
-          'note': 'Subir intensidad',
-          'chords': [
-            {'symbol': 'Do', 'beats': 0},
-            {'symbol': 'Sol/Si', 'beats': 0},
-            {'symbol': 'Re', 'beats': 0},
-            {'symbol': 'N.C.', 'beats': 0},
-          ],
-        },
+  'title': 'Santo',
+  'key': 'G',
+  'sections': [
+    {
+      'label': 'Verso',
+      'kind': 'verse',
+      'repeats': 2,
+      'chords': [
+        {'symbol': 'G', 'beats': 4},
+        {'symbol': 'D/F#', 'beats': 4},
+        {'symbol': 'Em7', 'beats': 0},
+        {'symbol': 'C', 'beats': 0},
       ],
-      'lyrics': '{title: Santo}\n[G]Santo, [D/F#]santo',
-    };
+    },
+    {
+      'label': 'Coro',
+      'kind': 'chorus',
+      'repeats': 1,
+      'note': 'Subir intensidad',
+      'chords': [
+        {'symbol': 'Do', 'beats': 0},
+        {'symbol': 'Sol/Si', 'beats': 0},
+        {'symbol': 'Re', 'beats': 0},
+        {'symbol': 'N.C.', 'beats': 0},
+      ],
+    },
+  ],
+  'lyrics': '{title: Santo}\n[G]Santo, [D/F#]santo',
+};
 
 void main() {
   test('convierte el borrador en canción con vueltas, tiempos y letra', () {
@@ -40,12 +40,22 @@ void main() {
     final song = result.song;
     expect(song.title, 'Santo');
     expect(song.source, SongSource.import);
-    expect(song.chords.map((c) => fmt.format(c.chord)),
-        ['G', 'D/F#', 'Em7', 'C', 'G', 'D/F#', 'Em7', 'C', 'C', 'G/B', 'D']);
+    expect(song.chords.map((c) => fmt.format(c.chord)), [
+      'G',
+      'D/F#',
+      'Em7',
+      'C',
+      'G',
+      'D/F#',
+      'Em7',
+      'C',
+      'C',
+      'G/B',
+      'D',
+    ]);
     expect(song.chords.first.beats, 4);
     expect(song.chords[2].beats, isNull);
-    expect(song.arrangement.map((o) => (song.section(o.sectionId)!.label, o.repeats)),
-        [('Verso', 2), ('Coro', 1)]);
+    expect(song.arrangement.map((o) => (song.section(o.sectionId)!.label, o.repeats)), [('Verso', 2), ('Coro', 1)]);
     expect(song.sections.first.kind, SectionKind.verse);
     expect(song.sections.first.note, isNull);
     expect(song.sections.last.note, 'Subir intensidad');

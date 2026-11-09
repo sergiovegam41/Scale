@@ -20,28 +20,27 @@ class ChordEvent {
 
   /// Copia del acorde para una vuelta agregada a mano (sin tiempos de la toma).
   ChordEvent copyForRepeat() => ChordEvent(
-        chord: chord,
-        confidence: confidence,
-        alternatives: List.of(alternatives),
-        edited: edited,
-        symbol: symbol,
-        beats: beats,
-      );
+    chord: chord,
+    confidence: confidence,
+    alternatives: List.of(alternatives),
+    edited: edited,
+    symbol: symbol,
+    beats: beats,
+  );
 
   factory ChordEvent.fromJson(Map<String, dynamic> json) => ChordEvent(
-        chord: Chord.fromJson(json['chord'] as Map<String, dynamic>),
-        startMicros: json['start'] as int?,
-        durationMicros: json['duration'] as int?,
-        confidence: (json['confidence'] as num?)?.toDouble(),
-        alternatives: [
-          for (final a in (json['alternatives'] as List?) ?? const [])
-            Chord.fromJson(a as Map<String, dynamic>),
-        ],
-        edited: json['edited'] as bool? ?? false,
-        symbol: json['symbol'] as String?,
-        lyric: json['lyric'] as String?,
-        beats: json['beats'] as int?,
-      );
+    chord: Chord.fromJson(json['chord'] as Map<String, dynamic>),
+    startMicros: json['start'] as int?,
+    durationMicros: json['duration'] as int?,
+    confidence: (json['confidence'] as num?)?.toDouble(),
+    alternatives: [
+      for (final a in (json['alternatives'] as List?) ?? const []) Chord.fromJson(a as Map<String, dynamic>),
+    ],
+    edited: json['edited'] as bool? ?? false,
+    symbol: json['symbol'] as String?,
+    lyric: json['lyric'] as String?,
+    beats: json['beats'] as int?,
+  );
 
   Chord chord;
 
@@ -69,16 +68,16 @@ class ChordEvent {
   int? beats;
 
   Map<String, dynamic> toJson() => {
-        'chord': chord.toJson(),
-        if (startMicros != null) 'start': startMicros,
-        if (durationMicros != null) 'duration': durationMicros,
-        if (confidence != null) 'confidence': double.parse(confidence!.toStringAsFixed(3)),
-        if (alternatives.isNotEmpty) 'alternatives': [for (final a in alternatives) a.toJson()],
-        if (edited) 'edited': true,
-        if (symbol != null) 'symbol': symbol,
-        if (lyric != null) 'lyric': lyric,
-        if (beats != null) 'beats': beats,
-      };
+    'chord': chord.toJson(),
+    if (startMicros != null) 'start': startMicros,
+    if (durationMicros != null) 'duration': durationMicros,
+    if (confidence != null) 'confidence': double.parse(confidence!.toStringAsFixed(3)),
+    if (alternatives.isNotEmpty) 'alternatives': [for (final a in alternatives) a.toJson()],
+    if (edited) 'edited': true,
+    if (symbol != null) 'symbol': symbol,
+    if (lyric != null) 'lyric': lyric,
+    if (beats != null) 'beats': beats,
+  };
 }
 
 /// Grabación MIDI cruda: la fuente de verdad para volver a analizar.
@@ -93,13 +92,13 @@ class Take {
   });
 
   factory Take.fromJson(Map<String, dynamic> json) => Take(
-        id: json['id'] as String,
-        recordedAt: DateTime.parse(json['recordedAt'] as String).toLocal(),
-        events: [for (final e in json['events'] as List) MidiEvent.fromJson(e as List)],
-        inputTranspose: json['inputTranspose'] as int? ?? 0,
-        partial: json['partial'] as bool? ?? false,
-        label: json['label'] as String?,
-      );
+    id: json['id'] as String,
+    recordedAt: DateTime.parse(json['recordedAt'] as String).toLocal(),
+    events: [for (final e in json['events'] as List) MidiEvent.fromJson(e as List)],
+    inputTranspose: json['inputTranspose'] as int? ?? 0,
+    partial: json['partial'] as bool? ?? false,
+    label: json['label'] as String?,
+  );
 
   /// Toma de una parte (sección grabada o regrabada en el editor), no de la
   /// canción entera: se guarda con todos sus matices pero los tiempos de los
@@ -122,30 +121,25 @@ class Take {
   int get durationMicros => events.isEmpty ? 0 : events.last.timeMicros;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'recordedAt': recordedAt.toUtc().toIso8601String(),
-        if (inputTranspose != 0) 'inputTranspose': inputTranspose,
-        if (partial) 'partial': true,
-        if (label != null) 'label': label,
-        'events': [for (final e in events) e.toJson()],
-      };
+    'id': id,
+    'recordedAt': recordedAt.toUtc().toIso8601String(),
+    if (inputTranspose != 0) 'inputTranspose': inputTranspose,
+    if (partial) 'partial': true,
+    if (label != null) 'label': label,
+    'events': [for (final e in events) e.toJson()],
+  };
 }
 
 /// Tramo de la canción en una tonalidad: acordes [start, end).
 class KeyRegion {
-  const KeyRegion({
-    required this.start,
-    required this.end,
-    required this.key,
-    required this.confidence,
-  });
+  const KeyRegion({required this.start, required this.end, required this.key, required this.confidence});
 
   factory KeyRegion.fromJson(Map<String, dynamic> json) => KeyRegion(
-        start: json['start'] as int,
-        end: json['end'] as int,
-        key: MusicKey.fromJson(json['key'] as Map<String, dynamic>),
-        confidence: (json['confidence'] as num).toDouble(),
-      );
+    start: json['start'] as int,
+    end: json['end'] as int,
+    key: MusicKey.fromJson(json['key'] as Map<String, dynamic>),
+    confidence: (json['confidence'] as num).toDouble(),
+  );
 
   final int start;
   final int end;
@@ -155,11 +149,11 @@ class KeyRegion {
   int get length => end - start;
 
   Map<String, dynamic> toJson() => {
-        'start': start,
-        'end': end,
-        'key': key.toJson(),
-        'confidence': double.parse(confidence.toStringAsFixed(3)),
-      };
+    'start': start,
+    'end': end,
+    'key': key.toJson(),
+    'confidence': double.parse(confidence.toStringAsFixed(3)),
+  };
 }
 
 enum SectionKind {
@@ -183,11 +177,11 @@ class SectionDef {
   SectionDef({required this.id, required this.label, this.kind = SectionKind.other, this.note});
 
   factory SectionDef.fromJson(Map<String, dynamic> json) => SectionDef(
-        id: json['id'] as String,
-        label: json['label'] as String,
-        kind: SectionKind.values.asNameMap()[json['kind']] ?? SectionKind.other,
-        note: json['note'] as String?,
-      );
+    id: json['id'] as String,
+    label: json['label'] as String,
+    kind: SectionKind.values.asNameMap()[json['kind']] ?? SectionKind.other,
+    note: json['note'] as String?,
+  );
 
   final String id;
   String label;
@@ -198,11 +192,11 @@ class SectionDef {
   String? note;
 
   Map<String, dynamic> toJson() => {
-        'id': id,
-        'label': label,
-        'kind': kind.name,
-        if (note != null && note!.trim().isNotEmpty) 'note': note,
-      };
+    'id': id,
+    'label': label,
+    'kind': kind.name,
+    if (note != null && note!.trim().isNotEmpty) 'note': note,
+  };
 }
 
 /// Dónde aparece una sección en la secuencia lineal: acordes [start, end).
@@ -210,19 +204,14 @@ class SectionDef {
 /// La secuencia lineal es la interpretación completa: una aparición ×2 contiene
 /// las dos vueltas, cada una de [passLength] acordes.
 class SectionOccurrence {
-  SectionOccurrence({
-    required this.sectionId,
-    required this.start,
-    required this.end,
-    this.repeats = 1,
-  });
+  SectionOccurrence({required this.sectionId, required this.start, required this.end, this.repeats = 1});
 
   factory SectionOccurrence.fromJson(Map<String, dynamic> json) => SectionOccurrence(
-        sectionId: json['section'] as String,
-        start: json['start'] as int,
-        end: json['end'] as int,
-        repeats: json['repeats'] as int? ?? 1,
-      );
+    sectionId: json['section'] as String,
+    start: json['start'] as int,
+    end: json['end'] as int,
+    repeats: json['repeats'] as int? ?? 1,
+  );
 
   String sectionId;
   int start;
@@ -238,11 +227,11 @@ class SectionOccurrence {
   int passOf(int index) => (index - start) ~/ passLength + 1;
 
   Map<String, dynamic> toJson() => {
-        'section': sectionId,
-        'start': start,
-        'end': end,
-        if (repeats > 1) 'repeats': repeats,
-      };
+    'section': sectionId,
+    'start': start,
+    'end': end,
+    if (repeats > 1) 'repeats': repeats,
+  };
 }
 
 /// Una aparición vista como sus vueltas (para editar todas a la vez).
@@ -294,12 +283,12 @@ class Song {
     this.showOriginal = false,
     this.lyrics,
     Map<String, dynamic>? extra,
-  })  : takes = takes ?? [],
-        chords = chords ?? [],
-        keyRegions = keyRegions ?? [],
-        sections = sections ?? [],
-        arrangement = arrangement ?? [],
-        extra = extra ?? {};
+  }) : takes = takes ?? [],
+       chords = chords ?? [],
+       keyRegions = keyRegions ?? [],
+       sections = sections ?? [],
+       arrangement = arrangement ?? [],
+       extra = extra ?? {};
 
   factory Song.create({required String title, SongSource source = SongSource.midi}) {
     final now = DateTime.now();
@@ -310,10 +299,25 @@ class Song {
   static const int schemaVersion = 1;
 
   static const Set<String> _knownFields = {
-    'format', 'schemaVersion', 'id', 'title', 'createdAt', 'updatedAt', 'source', 'takes',
-    'chords', 'key', 'keyConfidence', 'keyManual', 'keyRegions', 'keyRegionsManual', 'sections',
+    'format',
+    'schemaVersion',
+    'id',
+    'title',
+    'createdAt',
+    'updatedAt',
+    'source',
+    'takes',
+    'chords',
+    'key',
+    'keyConfidence',
+    'keyManual',
+    'keyRegions',
+    'keyRegionsManual',
+    'sections',
     'arrangement',
-    'transpose', 'showOriginal', 'lyrics',
+    'transpose',
+    'showOriginal',
+    'lyrics',
   };
 
   factory Song.fromJson(Map<String, dynamic> json) {
@@ -325,8 +329,8 @@ class Song {
       throw FormatException('Canción de una versión más nueva de Scale (v$version)');
     }
     List<T> list<T>(String field, T Function(Map<String, dynamic>) parse) => [
-          for (final e in (json[field] as List?) ?? const []) parse(e as Map<String, dynamic>),
-        ];
+      for (final e in (json[field] as List?) ?? const []) parse(e as Map<String, dynamic>),
+    ];
     return Song(
       id: json['id'] as String,
       title: json['title'] as String? ?? '',
@@ -344,9 +348,7 @@ class Song {
       arrangement: list('arrangement', SectionOccurrence.fromJson),
       transpose: json['transpose'] as int? ?? 0,
       showOriginal: json['showOriginal'] as bool? ?? false,
-      lyrics: json['lyrics'] == null
-          ? null
-          : SongLyrics.fromJson(json['lyrics'] as Map<String, dynamic>),
+      lyrics: json['lyrics'] == null ? null : SongLyrics.fromJson(json['lyrics'] as Map<String, dynamic>),
       extra: {
         for (final e in json.entries)
           if (!_knownFields.contains(e.key)) e.key: e.value,
@@ -369,6 +371,7 @@ class Song {
     }
     return null;
   }
+
   final List<ChordEvent> chords;
 
   /// Tonalidad principal (la original: la de las figuras que se tocan).
@@ -462,12 +465,7 @@ class Song {
     keyRegions = [
       for (final r in keyRegions)
         if (position(r.end) > position(r.start))
-          KeyRegion(
-            start: position(r.start),
-            end: position(r.end),
-            key: r.key,
-            confidence: r.confidence,
-          ),
+          KeyRegion(start: position(r.start), end: position(r.end), key: r.key, confidence: r.confidence),
     ];
   }
 
@@ -515,10 +513,7 @@ class Song {
       final atPass = o.repeats > 1 && offset % o.passLength == 0;
       final before = atPass ? offset ~/ o.passLength : 1;
       final after = atPass ? o.repeats - before : 1;
-      arrangement.insert(
-        i + 1,
-        SectionOccurrence(sectionId: section.id, start: index, end: o.end, repeats: after),
-      );
+      arrangement.insert(i + 1, SectionOccurrence(sectionId: section.id, start: index, end: o.end, repeats: after));
       o
         ..end = index
         ..repeats = before;
@@ -532,9 +527,8 @@ class Song {
     if (occurrence <= 0 || occurrence >= arrangement.length) return;
     final a = arrangement[occurrence - 1];
     final b = arrangement[occurrence];
-    final samePass = a.sectionId == b.sectionId &&
-        a.passLength == b.passLength &&
-        _equalChords(a.start, b.start, a.passLength);
+    final samePass =
+        a.sectionId == b.sectionId && a.passLength == b.passLength && _equalChords(a.start, b.start, a.passLength);
     a
       ..repeats = samePass ? a.repeats + b.repeats : 1
       ..end = b.end;
@@ -567,9 +561,7 @@ class Song {
     final current = o.length ~/ pass;
     if (repeats > current) {
       final firstPass = chords.sublist(o.start, o.start + pass);
-      _insertAt(o.end, [
-        for (var r = current; r < repeats; r++) ...firstPass.map((c) => c.copyForRepeat()),
-      ]);
+      _insertAt(o.end, [for (var r = current; r < repeats; r++) ...firstPass.map((c) => c.copyForRepeat())]);
     } else {
       _removeRange(o.start + repeats * pass, o.end);
     }
@@ -591,8 +583,7 @@ class Song {
     _dropUnusedSections();
   }
 
-  void _dropUnusedSections() =>
-      sections.removeWhere((s) => !arrangement.any((o) => o.sectionId == s.id));
+  void _dropUnusedSections() => sections.removeWhere((s) => !arrangement.any((o) => o.sectionId == s.id));
 
   // ── Edición por vueltas ──────────────────────────────────────────────
   //
@@ -797,12 +788,9 @@ class Song {
         chords.addAll(p);
       }
       final equal = passes.every((p) => p.length == passes.first.length);
-      arrangement.add(SectionOccurrence(
-        sectionId: b.sectionId,
-        start: start,
-        end: chords.length,
-        repeats: equal ? passes.length : 1,
-      ));
+      arrangement.add(
+        SectionOccurrence(sectionId: b.sectionId, start: start, end: chords.length, repeats: equal ? passes.length : 1),
+      );
     }
     _dropUnusedSections();
 
@@ -841,21 +829,21 @@ class Song {
 
   /// Todo lo editable (sin las tomas MIDI), para deshacer y rehacer.
   Map<String, dynamic> editState() => {
-        'title': title,
-        if (key != null) 'key': key!.toJson(),
-        if (keyConfidence != null) 'keyConfidence': keyConfidence,
-        'keyManual': keyManual,
-        'chords': [for (final c in chords) c.toJson()],
-        'keyRegions': [for (final r in keyRegions) r.toJson()],
-        'keyRegionsManual': keyRegionsManual,
-        'sections': [for (final s in sections) s.toJson()],
-        'arrangement': [for (final o in arrangement) o.toJson()],
-      };
+    'title': title,
+    if (key != null) 'key': key!.toJson(),
+    if (keyConfidence != null) 'keyConfidence': keyConfidence,
+    'keyManual': keyManual,
+    'chords': [for (final c in chords) c.toJson()],
+    'keyRegions': [for (final r in keyRegions) r.toJson()],
+    'keyRegionsManual': keyRegionsManual,
+    'sections': [for (final s in sections) s.toJson()],
+    'arrangement': [for (final o in arrangement) o.toJson()],
+  };
 
   void restoreEditState(Map<String, dynamic> state) {
     List<T> list<T>(String field, T Function(Map<String, dynamic>) parse) => [
-          for (final e in (state[field] as List?) ?? const []) parse(e as Map<String, dynamic>),
-        ];
+      for (final e in (state[field] as List?) ?? const []) parse(e as Map<String, dynamic>),
+    ];
     title = state['title'] as String;
     key = state['key'] == null ? null : MusicKey.fromJson(state['key'] as Map<String, dynamic>);
     keyConfidence = (state['keyConfidence'] as num?)?.toDouble();
@@ -878,37 +866,32 @@ class Song {
     final previous = keyRegions[region - 1];
     keyRegions = [
       ...keyRegions.take(region - 1),
-      KeyRegion(
-        start: previous.start,
-        end: keyRegions[region].end,
-        key: previous.key,
-        confidence: previous.confidence,
-      ),
+      KeyRegion(start: previous.start, end: keyRegions[region].end, key: previous.key, confidence: previous.confidence),
       ...keyRegions.skip(region + 1),
     ];
     keyRegionsManual = true;
   }
 
   Map<String, dynamic> toJson() => {
-        'format': format,
-        'schemaVersion': schemaVersion,
-        'id': id,
-        'title': title,
-        'createdAt': createdAt.toUtc().toIso8601String(),
-        'updatedAt': updatedAt.toUtc().toIso8601String(),
-        'source': source.name,
-        if (key != null) 'key': key!.toJson(),
-        if (keyConfidence != null) 'keyConfidence': double.parse(keyConfidence!.toStringAsFixed(3)),
-        if (keyManual) 'keyManual': true,
-        'transpose': transpose,
-        if (showOriginal) 'showOriginal': true,
-        'chords': [for (final c in chords) c.toJson()],
-        'keyRegions': [for (final r in keyRegions) r.toJson()],
-        if (keyRegionsManual) 'keyRegionsManual': true,
-        'sections': [for (final s in sections) s.toJson()],
-        'arrangement': [for (final o in arrangement) o.toJson()],
-        if (lyrics != null) 'lyrics': lyrics!.toJson(),
-        'takes': [for (final t in takes) t.toJson()],
-        ...extra,
-      };
+    'format': format,
+    'schemaVersion': schemaVersion,
+    'id': id,
+    'title': title,
+    'createdAt': createdAt.toUtc().toIso8601String(),
+    'updatedAt': updatedAt.toUtc().toIso8601String(),
+    'source': source.name,
+    if (key != null) 'key': key!.toJson(),
+    if (keyConfidence != null) 'keyConfidence': double.parse(keyConfidence!.toStringAsFixed(3)),
+    if (keyManual) 'keyManual': true,
+    'transpose': transpose,
+    if (showOriginal) 'showOriginal': true,
+    'chords': [for (final c in chords) c.toJson()],
+    'keyRegions': [for (final r in keyRegions) r.toJson()],
+    if (keyRegionsManual) 'keyRegionsManual': true,
+    'sections': [for (final s in sections) s.toJson()],
+    'arrangement': [for (final o in arrangement) o.toJson()],
+    if (lyrics != null) 'lyrics': lyrics!.toJson(),
+    'takes': [for (final t in takes) t.toJson()],
+    ...extra,
+  };
 }

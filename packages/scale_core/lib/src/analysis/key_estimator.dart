@@ -14,9 +14,8 @@ class KeyCandidate {
 /// Resultado del estimador: las 24 tonalidades ordenadas por probabilidad.
 class KeyEstimate {
   KeyEstimate(List<double> probabilities, this.observations)
-      : ranked = [
-          for (var i = 0; i < 24; i++) KeyCandidate(MusicKey.fromIndex(i), probabilities[i]),
-        ]..sort((a, b) => b.probability.compareTo(a.probability));
+    : ranked = [for (var i = 0; i < 24; i++) KeyCandidate(MusicKey.fromIndex(i), probabilities[i])]
+        ..sort((a, b) => b.probability.compareTo(a.probability));
 
   final List<KeyCandidate> ranked;
 
@@ -51,9 +50,7 @@ class KeyEstimator {
   int _observations = 0;
 
   void reset() {
-    _p = [
-      for (final k in MusicKey.all) k.isMajor ? majorPrior / 12 : (1 - majorPrior) / 12,
-    ];
+    _p = [for (final k in MusicKey.all) k.isMajor ? majorPrior / 12 : (1 - majorPrior) / 12];
     _observations = 0;
   }
 

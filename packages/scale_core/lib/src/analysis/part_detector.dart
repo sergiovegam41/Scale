@@ -50,9 +50,7 @@ class PartDetector {
   static const double flickFraction = 0.3;
 
   static bool sameChord(Chord a, Chord b) =>
-      a.root == b.root &&
-      (a.bass ?? a.root) == (b.bass ?? b.root) &&
-      a.quality.family.compatibleWith(b.quality.family);
+      a.root == b.root && (a.bass ?? a.root) == (b.bass ?? b.root) && a.quality.family.compatibleWith(b.quality.family);
 
   /// [silenceBefore]: silencio (µs) antes de cada acorde, de [silencesBefore].
   static PartDetection detect(
@@ -168,9 +166,7 @@ class PartDetector {
 
     // Se parten los acordes sostenidos a través de un límite de vuelta o parte.
     final cuts = <int>{
-      for (final p in parts) ...[
-        for (var r = 0; r <= p.repeats; r++) p.start + r * p.pass,
-      ],
+      for (final p in parts) ...[for (var r = 0; r <= p.repeats; r++) p.start + r * p.pass],
     };
     final out = <ChordEvent>[];
     final unitToChord = List<int>.filled(units.length + 1, 0);
@@ -198,9 +194,7 @@ class PartDetector {
       final start = unitToChord[p.start];
       final end = unitToChord[p.end];
       final repeats = (end - start) % p.repeats == 0 ? p.repeats : 1;
-      arrangement.add(
-        SectionOccurrence(sectionId: sectionFor(p), start: start, end: end, repeats: repeats),
-      );
+      arrangement.add(SectionOccurrence(sectionId: sectionFor(p), start: start, end: end, repeats: repeats));
     }
     return PartDetection(out, sections, arrangement);
   }
@@ -274,11 +268,7 @@ class PartDetector {
 
   /// Los roces (acordes de menos de [flickFraction] de tiempo) se suman al
   /// acorde anterior.
-  static (List<ChordEvent>, List<int>?) _absorbFlicks(
-    List<ChordEvent> chords,
-    List<int>? silenceBefore,
-    int? beat,
-  ) {
+  static (List<ChordEvent>, List<int>?) _absorbFlicks(List<ChordEvent> chords, List<int>? silenceBefore, int? beat) {
     if (beat == null) return (chords, silenceBefore);
     final out = <ChordEvent>[];
     final silences = <int>[];
@@ -299,16 +289,16 @@ class PartDetector {
   }
 
   static ChordEvent _withDuration(ChordEvent e, int duration, {bool edited = false}) => ChordEvent(
-        chord: e.chord,
-        startMicros: e.startMicros,
-        durationMicros: duration,
-        confidence: e.confidence,
-        alternatives: List.of(e.alternatives),
-        edited: e.edited || edited,
-        symbol: e.symbol,
-        lyric: e.lyric,
-        beats: e.beats,
-      );
+    chord: e.chord,
+    startMicros: e.startMicros,
+    durationMicros: duration,
+    confidence: e.confidence,
+    alternatives: List.of(e.alternatives),
+    edited: e.edited || edited,
+    symbol: e.symbol,
+    lyric: e.lyric,
+    beats: e.beats,
+  );
 
   /// Duración musical de cada acorde: hasta el inicio del siguiente, sin
   /// contar una pausa que le siga (el respiro normal entre acordes sí cuenta).
@@ -329,7 +319,10 @@ class PartDetector {
           _sounding(chords, silenceBefore, i, pauseMicros)!,
     ]..sort();
     if (durations.isEmpty) return null;
-    List<int> near(int d) => [for (final x in durations) if ((x - d).abs() <= d * 0.15) x];
+    List<int> near(int d) => [
+      for (final x in durations)
+        if ((x - d).abs() <= d * 0.15) x,
+    ];
     var best = near(durations.first);
     for (final d in durations.skip(1)) {
       final cluster = near(d);
@@ -387,12 +380,7 @@ class PartDetector {
     return best;
   }
 
-  static bool _madeOfRepeats(
-    int start,
-    int end,
-    List<Chord> chords,
-    bool Function(int, int, int) same,
-  ) {
+  static bool _madeOfRepeats(int start, int end, List<Chord> chords, bool Function(int, int, int) same) {
     var j = start;
     while (j < end) {
       final inner = _tandem(j, end, chords, same, allowComposite: true);

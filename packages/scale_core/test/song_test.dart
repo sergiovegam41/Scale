@@ -52,9 +52,7 @@ void main() {
     });
 
     test('sube un tono en el último coro', () {
-      final r = KeyAnalyzer.regions(
-        chords('G C D G Em C D G G C D G A D E A F#m D E A A D E A'),
-      );
+      final r = KeyAnalyzer.regions(chords('G C D G Em C D G G C D G A D E A F#m D E A A D E A'));
       expect(r.map((x) => x.key), [MusicKey(7, Mode.major), MusicKey(9, Mode.major)]);
       expect(r.first.start, 0);
       expect(r.last.end, 24);
@@ -72,9 +70,7 @@ void main() {
     });
 
     test('pasar a la relativa menor no es modulación', () {
-      final r = KeyAnalyzer.regions(
-        chords('G D C G G D C G Em Bm C D Em Bm C D Em Bm C D Em Bm C D G D C G'),
-      );
+      final r = KeyAnalyzer.regions(chords('G D C G G D C G Em Bm C D Em Bm C D Em Bm C D Em Bm C D G D C G'));
       expect(r, hasLength(1));
       expect(r.single.key, MusicKey(7, Mode.major));
     });
@@ -95,10 +91,10 @@ void main() {
     List<ChordEvent> events(String text) => [for (final c in chords(text)) ChordEvent(chord: c)];
 
     List<String> order(PartDetection d) => [
-          for (final o in d.arrangement)
-            '${d.sections.firstWhere((s) => s.id == o.sectionId).label}'
-                '${o.repeats > 1 ? ' ×${o.repeats}' : ''}',
-        ];
+      for (final o in d.arrangement)
+        '${d.sections.firstWhere((s) => s.id == o.sectionId).label}'
+            '${o.repeats > 1 ? ' ×${o.repeats}' : ''}',
+    ];
 
     test('una progresión tocada dos veces seguidas es una parte ×2', () {
       final d = PartDetector.detect(events('G D Em C G D Em C Am F C G'));
@@ -158,8 +154,14 @@ void main() {
       final song = SongAnalyzer.fromTake(
         title: 'Pausa',
         take: timedTake([
-          ('G', 1000, 0), ('C', 1000, 0), ('D', 1000, 0), ('Em', 1000, 2500),
-          ('G', 1000, 0), ('C', 1000, 0), ('D', 1000, 0), ('Em', 1000, 0),
+          ('G', 1000, 0),
+          ('C', 1000, 0),
+          ('D', 1000, 0),
+          ('Em', 1000, 2500),
+          ('G', 1000, 0),
+          ('C', 1000, 0),
+          ('D', 1000, 0),
+          ('Em', 1000, 0),
         ]),
       );
       // Sin la pausa sería "Parte 1 ×2"; con ella son dos partes.
@@ -171,34 +173,52 @@ void main() {
     test('toma real: verso ×2 y luego coro, puente y cierre de 4 tiempos cada uno', () {
       // (cifrado, duración hasta el siguiente acorde en s, silencio antes en s)
       const plan = [
-        ('D', 2.08, 2.67), ('A', 1.96, 0.37), ('Bm', 3.99, 0.39),
-        ('D', 2.00, 0.39), ('A', 2.00, 0.46), ('Bm', 3.90, 0.47),
-        ('G', 1.88, 0.73), ('A', 1.91, 0.26), ('D', 1.89, 0.54), ('D7', 1.89, 0.33),
-        ('G', 1.93, 0.36), ('A', 1.86, 0.39), ('Bm', 0.95, 0.43), ('A', 0.95, 0.42),
-        ('G', 3.72, 0.44), ('A', 1.89, 0.43), ('D', 1.63, 0.43), ('D5', 0.23, 0.0),
-        ('D7', 2.62, 0.0), ('D', 0.48, 0.78),
+        ('D', 2.08, 2.67),
+        ('A', 1.96, 0.37),
+        ('Bm', 3.99, 0.39),
+        ('D', 2.00, 0.39),
+        ('A', 2.00, 0.46),
+        ('Bm', 3.90, 0.47),
+        ('G', 1.88, 0.73),
+        ('A', 1.91, 0.26),
+        ('D', 1.89, 0.54),
+        ('D7', 1.89, 0.33),
+        ('G', 1.93, 0.36),
+        ('A', 1.86, 0.39),
+        ('Bm', 0.95, 0.43),
+        ('A', 0.95, 0.42),
+        ('G', 3.72, 0.44),
+        ('A', 1.89, 0.43),
+        ('D', 1.63, 0.43),
+        ('D5', 0.23, 0.0),
+        ('D7', 2.62, 0.0),
+        ('D', 0.48, 0.78),
       ];
       final list = [
-        for (final (c, d, _) in plan)
-          ChordEvent(chord: ChordParser.parse(c)!, durationMicros: (d * 1e6).round()),
+        for (final (c, d, _) in plan) ChordEvent(chord: ChordParser.parse(c)!, durationMicros: (d * 1e6).round()),
       ];
       final d = PartDetector.detect(list, silenceBefore: [for (final (_, _, s) in plan) (s * 1e6).round()]);
       String pass(SectionOccurrence o) =>
           d.chords.sublist(o.start, o.start + o.passLength).map((c) => fmt.format(c.chord)).join(' ');
       expect(order(d), ['Parte 1 ×2', 'Parte 2', 'Parte 3', 'Parte 4']);
-      expect(d.arrangement.map(pass), [
-        'D A Bm',
-        'G A D D7',
-        'G A Bm A G',
-        'G A D D7 D',
-      ]);
+      expect(d.arrangement.map(pass), ['D A Bm', 'G A D D7', 'G A Bm A G', 'G A D D7 D']);
     });
 
     test('la última vuelta cuenta aunque el acorde final se corte al detener', () {
       final list = [
         for (final (c, s) in [
-          ('C', 1.7), ('D', 1.7), ('Em7', 3.4), ('C', 1.7), ('D', 1.7), ('Em7', 3.4),
-          ('C', 1.7), ('D', 1.7), ('Em7', 3.4), ('C', 1.7), ('D', 1.7), ('Em7', 2.7),
+          ('C', 1.7),
+          ('D', 1.7),
+          ('Em7', 3.4),
+          ('C', 1.7),
+          ('D', 1.7),
+          ('Em7', 3.4),
+          ('C', 1.7),
+          ('D', 1.7),
+          ('Em7', 3.4),
+          ('C', 1.7),
+          ('D', 1.7),
+          ('Em7', 2.7),
         ])
           ChordEvent(chord: ChordParser.parse(c)!, durationMicros: (s * 1e6).round()),
       ];
@@ -208,7 +228,15 @@ void main() {
     test('un acorde sostenido entre dos vueltas se parte en ambas', () {
       // G C D G | G C D G con el G del cambio sostenido (un solo acorde de 2 s).
       final list = [
-        for (final (c, ms) in [('G', 1000), ('C', 1000), ('D', 1000), ('G', 2000), ('C', 1000), ('D', 1000), ('G', 1000)])
+        for (final (c, ms) in [
+          ('G', 1000),
+          ('C', 1000),
+          ('D', 1000),
+          ('G', 2000),
+          ('C', 1000),
+          ('D', 1000),
+          ('G', 1000),
+        ])
           ChordEvent(chord: ChordParser.parse(c)!, durationMicros: ms * 1000),
       ];
       final d = PartDetector.detect(list);
@@ -220,8 +248,7 @@ void main() {
 
   group('vueltas', () {
     Song songOf(String text, List<(int, int, int)> parts) {
-      final song = Song.create(title: 'x')
-        ..chords.addAll([for (final c in chords(text)) ChordEvent(chord: c)]);
+      final song = Song.create(title: 'x')..chords.addAll([for (final c in chords(text)) ChordEvent(chord: c)]);
       for (final (start, end, repeats) in parts) {
         final s = song.newSection(label: song.nextPartLabel());
         song
@@ -281,12 +308,8 @@ void main() {
 
   group('canción', () {
     test('se reconstruye desde la toma MIDI', () {
-      final song = SongAnalyzer.fromTake(
-        title: 'Prueba',
-        take: takeOf('G D/F# Em7 C G D/F# C G'),
-      );
-      expect([for (final c in song.chords) fmt.format(c.chord)],
-          ['G', 'D/F#', 'Em7', 'C', 'G', 'D/F#', 'C', 'G']);
+      final song = SongAnalyzer.fromTake(title: 'Prueba', take: takeOf('G D/F# Em7 C G D/F# C G'));
+      expect([for (final c in song.chords) fmt.format(c.chord)], ['G', 'D/F#', 'Em7', 'C', 'G', 'D/F#', 'C', 'G']);
       expect(song.key, MusicKey(7, Mode.major));
       expect(song.keyConfidence, greaterThan(0.5));
       expect(song.chords.first.durationMicros, closeTo(1000 * ms, 100 * ms));
