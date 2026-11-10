@@ -2,6 +2,7 @@ import 'dart:math' as math;
 
 import 'package:xml/xml.dart';
 
+import '../theory/key.dart';
 import 'score.dart';
 
 const String _letters = 'CDEFGAB';
@@ -263,7 +264,7 @@ class _PartWriter {
 
   void _harmony(ChordSymbol c, Measure m) {
     final chord = c.chord;
-    final spell = _defaultSpelling(chord.root, m.fifths);
+    final spell = _defaultSpelling(chord.root, m.fifths, m.minor);
     b.element(
       'harmony',
       nest: () {
@@ -287,7 +288,7 @@ class _PartWriter {
         b.element('kind', attributes: {'text': shown}, nest: kind);
         final bass = chord.bass;
         if (bass != null) {
-          final bs = _defaultSpelling(bass, m.fifths);
+          final bs = _defaultSpelling(bass, m.fifths, m.minor);
           b.element(
             'bass',
             nest: () {
@@ -313,10 +314,13 @@ class _PartWriter {
   }
 
   /// Letra y alteración de [pc]: sostenidos en armaduras con sostenidos.
-  static (int, int) _defaultSpelling(int pc, int fifths) {
-    const sharps = [(0, 0), (0, 1), (1, 0), (1, 1), (2, 0), (3, 0), (3, 1), (4, 0), (4, 1), (5, 0), (5, 1), (6, 0)];
-    const flats = [(0, 0), (1, -1), (1, 0), (2, -1), (2, 0), (3, 0), (4, -1), (4, 0), (5, -1), (5, 0), (6, -1), (6, 0)];
-    return (fifths >= 0 ? sharps : flats)[pc % 12];
+  /// La fundamental (o el bajo) de un cifrado según su función en la
+  /// tonalidad de la armadura: en Do, Bb (bVII) y no A#; en Re, C y no B#.
+  static (int, int) _defaultSpelling(int pc, int fifths, bool minor) {
+    final major = (fifths * 7) % 12;
+    final key = minor ? MusicKey(major + 9, Mode.minor) : MusicKey(major, Mode.major);
+    final s = key.spell(pc);
+    return (s.letter, s.accidental);
   }
 
   /// Escribe las voces una tras otra, volviendo al inicio del compás con

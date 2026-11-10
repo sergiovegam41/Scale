@@ -15,10 +15,89 @@ import '../midi/midi_service.dart';
 ///
 /// Sin piano conectado avanza igual, en silencio: el cursor sigue moviéndose.
 class ScorePlayer extends ChangeNotifier {
-  ScorePlayer(this.midi, this.timeline);
+  ScorePlayer(this.midi, ScoreTimeline timeline) : _timeline = timeline {
+    _clicks = _clicksOf(timeline);
+  }
 
   final MidiService midi;
-  ScoreTimeline timeline;
+
+  ScoreTimeline get timeline => _timeline;
+  ScoreTimeline _timeline;
+  set timeline(ScoreTimeline t) {
+    _timeline = t;
+    _clicks = _clicksOf(t);
+    loopA = loopB = null;
+  }
+
+  /// Metrónomo mientras suena (caja china por el canal de percusión, aguda
+  /// en el primer pulso). Sigue la velocidad y, al oír la toma, su tempo.
+  bool get metronome => _metronome;
+  bool _metronome = false;
+  set metronome(bool v) {
+    _metronome = v;
+    _nextClick = _clickAt(_tick);
+    notifyListeners();
+  }
+
+  /// Bucle A–B, en pulsos desplegados: al llegar a [loopB] vuelve a [loopA].
+  int? loopA;
+  int? loopB;
+  bool get looping => loopA != null && loopB != null;
+
+  void setLoop(int a, int b) {
+    loopA = a;
+    loopB = b;
+    if (_tick < a || _tick >= b) seek(a);
+    notifyListeners();
+  }
+
+  void clearLoop() {
+    loopA = loopB = null;
+    notifyListeners();
+  }
+
+  /// Pulsos del metrónomo: (pulso desplegado, primero del compás).
+  late List<(int, bool)> _clicks;
+  int _nextClick = 0;
+
+  static List<(int, bool)> _clicksOf(ScoreTimeline t) {
+    final out = <(int, bool)>[];
+    for (final pm in t.order) {
+      final m = t.score.measures[pm.index];
+      final pulse = (pulseQuarters(m.time) * ticksPerQuarter).round();
+      // En la anacrusa los pulsos van contados desde el final.
+      final offset = m.implicit ? m.length % pulse : 0;
+      for (var rel = offset; rel < m.length; rel += pulse) {
+        out.add((pm.playTick + rel, !m.implicit && rel == 0));
+      }
+    }
+    return out;
+  }
+
+  int _clickAt(int tick) {
+    final i = _clicks.indexWhere((c) => c.$1 >= tick);
+    return i < 0 ? _clicks.length : i;
+  }
+
+  void _sendClicks(int tick) {
+    while (_nextClick < _clicks.length && _clicks[_nextClick].$1 <= tick) {
+      final (at, accent) = _clicks[_nextClick++];
+      // Uno que se pasó hace rato (tras una pausa larga) no suena.
+      if (!_metronome || tick - at > ticksPerQuarter ~/ 8 || midi.connected == null) continue;
+      final note = accent ? 76 : 77; // caja china aguda / grave
+      midi.send([0x99, note, accent ? 110 : 80]);
+      midi.send([0x89, note, 0]);
+    }
+  }
+
+  /// Si se llegó al final del bucle: vuelve al principio y sigue.
+  bool _loopBack(int tick) {
+    final a = loopA;
+    final b = loopB;
+    if (a == null || b == null || tick < b) return false;
+    seek(a);
+    return true;
+  }
 
   ScoreRecording? get recording => timeline.score.recording;
   bool get canPlayAsPlayed => recording != null;
@@ -113,10 +192,12 @@ class ScorePlayer extends ChangeNotifier {
   void play({int? from}) {
     if (from != null) seek(from);
     if (_tick >= timeline.lengthTicks) seek(0);
+    if (looping && (_tick < loopA! || _tick >= loopB!)) _tick = loopA!;
     _anchorMicros = _microsAt(_tick);
     // La toma desde el principio incluye la cuenta (y la anacrusa).
     if (asPlayed && _tick == 0) _anchorMicros = 0;
     _next = asPlayed ? _rawIndexAt(_anchorMicros) : _firstAtOrAfter(_tick);
+    _nextClick = _clickAt(_tick);
     _lastNotifyMs = 0;
     _clock
       ..reset()
@@ -134,10 +215,10 @@ class ScorePlayer extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Vuelve al principio.
+  /// Vuelve al principio (del bucle, si hay).
   void stop() {
     pause();
-    seek(0);
+    seek(loopA ?? 0);
   }
 
   /// Salta a [tick] (desplegado). Si está sonando, sigue desde ahí.
@@ -201,7 +282,9 @@ class ScorePlayer extends ChangeNotifier {
 
   void _pump() {
     final tick = _tickAt(_nowMicros);
+    if (_loopBack(tick)) return;
     _tick = tick;
+    _sendClicks(tick);
     final notes = timeline.notes;
     var changed = false;
     // Primero se apagan las que terminan (una nota repetida debe volver a sonar).
@@ -256,6 +339,8 @@ class ScorePlayer extends ChangeNotifier {
       }
     }
     final tick = _tickAt(now);
+    if (_loopBack(tick)) return;
+    _sendClicks(tick);
     if (changed || tick != _tick) {
       _tick = tick;
       final ids = _soundingAt(tick);

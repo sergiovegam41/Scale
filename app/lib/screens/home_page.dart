@@ -53,14 +53,24 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    // Solo para desarrollo en escritorio: SCALE_OPEN_SCORE=<archivo MusicXML>
+    // Solo para desarrollo en escritorio: SCALE_OPEN_SCORE=<archivo MusicXML o MIDI>
     // abre esa partitura al arrancar, sin guardarla.
     final path = kDebugMode && !Platform.isAndroid ? Platform.environment['SCALE_OPEN_SCORE'] : null;
     if (path != null) {
       WidgetsBinding.instance.addPostFrameCallback((_) async {
-        final score = MusicXmlReader.readBytes(await File(path).readAsBytes(), id: 'debug', fileName: path);
+        final bytes = await File(path).readAsBytes();
+        // Un MIDI entra con todas sus pistas, o las de SCALE_MIDI_TRACKS ("1:0,5:4").
+        final tracks = Platform.environment['SCALE_MIDI_TRACKS']?.split(',').toSet();
+        final score = path.toLowerCase().endsWith('.mid')
+            ? MidiFileImporter.toScore(MidiFile.parse(bytes), id: 'debug', fileName: path, sources: tracks)!
+            : MusicXmlReader.readBytes(bytes, id: 'debug', fileName: path);
         if (!mounted) return;
-        Navigator.of(context).push(MaterialPageRoute(builder: (_) => ScorePage(score: score, midi: widget.midi, autoplay: Platform.environment['SCALE_AUTOPLAY'] == '1')));
+        Navigator.of(context).push(
+          MaterialPageRoute(
+            builder: (_) =>
+                ScorePage(score: score, midi: widget.midi, autoplay: Platform.environment['SCALE_AUTOPLAY'] == '1'),
+          ),
+        );
       });
     }
   }

@@ -238,12 +238,13 @@ class ScoreRecording {
 }
 
 class _RawNote {
-  _RawNote(this.on, this.off, this.midi, this.velocity);
+  _RawNote(this.on, this.off, this.midi, this.velocity, [this.channel = 0]);
 
   final int on;
   int off;
   final int midi;
   final int velocity;
+  final int channel;
 
   int tick = 0;
   int endTick = 0;
@@ -339,14 +340,32 @@ class _Quant {
 /// ligaduras; ortografía según la tonalidad; fuerza de cada nota, dinámicas
 /// y cifrado.
 class PerformanceTranscriber {
-  PerformanceTranscriber._(this.take, this.settings);
+  PerformanceTranscriber._(this.take, this.settings, this._exact, this._staffByChannel, this._measureMap);
 
   /// Escribe [take] como partitura. Devuelve null si no hay notas.
-  static Score? transcribe(Take take, TranscriptionSettings settings, {required String id, required String title}) =>
-      PerformanceTranscriber._(take, settings)._run(id, title);
+  ///
+  /// [exact]: la toma viene de un archivo (secuenciada, no tocada): no hay
+  /// roces ni acordes arpegiados que corregir, y los silencios cortos son
+  /// silencios de verdad. [staffByChannel]: pentagrama fijo de las notas de
+  /// cada canal (p. ej. una pista por mano); los demás se reparten solos.
+  /// [measureMap]: los compases ya se conocen (los de un archivo): cada
+  /// cambio de compás como (pulso desde [TranscriptionSettings.startMicros],
+  /// compás); se usan tal cual en vez de deducirlos.
+  static Score? transcribe(
+    Take take,
+    TranscriptionSettings settings, {
+    required String id,
+    required String title,
+    bool exact = false,
+    Map<int, int>? staffByChannel,
+    List<(int, TimeSignature)>? measureMap,
+  }) => PerformanceTranscriber._(take, settings, exact, staffByChannel, measureMap)._run(id, title);
 
   final Take take;
   final TranscriptionSettings settings;
+  final bool _exact;
+  final Map<int, int>? _staffByChannel;
+  final List<(int, TimeSignature)>? _measureMap;
   int _ids = 0;
 
   /// El compás del pulso que se sigue: el fijado o el del metrónomo (los
@@ -413,12 +432,17 @@ class PerformanceTranscriber {
 
     // Compás y primera parte fuerte.
     final jFirst = _floorDiv(onsets.first.tick, pt);
-    final (time, phase) = _meter(onsets, jFirst, followed ? metroDown : null);
+    final map = _measureMap;
+    // Con compases conocidos: se quitan los compases vacíos del principio.
+    final mapStart = map == null ? null : _mapStart(map, onsets.first.tick - metroDown * pt);
+    final (time, phase) = mapStart != null ? (mapStart.$2, 0) : _meter(onsets, jFirst, followed ? metroDown : null);
     final b = pulsesPerMeasure(time);
     final metroPhase = followed && b == pulsesPerMeasure(settings.time) && phase == metroDown % b;
     int origin;
     var pickupBeats = 0;
-    if (metroPhase && jFirst >= metroDown) {
+    if (mapStart != null) {
+      origin = metroDown + mapStart.$1 ~/ pt;
+    } else if (metroPhase && jFirst >= metroDown) {
       // Se empezó en el compás 1 o después: compases enteros (con silencio
       // al principio si se entró tarde).
       origin = jFirst - (jFirst - phase) % b;
@@ -435,6 +459,12 @@ class PerformanceTranscriber {
 
     final groups = _groups(notes);
     _assignHands(groups);
+    final fixedStaff = _staffByChannel;
+    if (fixedStaff != null) {
+      for (final n in notes) {
+        n.staff = fixedStaff[n.channel] ?? n.staff;
+      }
+    }
 
     final key = settings.keyIndex != null ? MusicKey.fromIndex(settings.keyIndex!) : _estimateKey();
     final fifths = key == null ? 0 : KeySignature.of(key).fifths;
@@ -444,14 +474,38 @@ class PerformanceTranscriber {
     final measures = <Measure>[];
     var tick = 0;
     var number = 1;
-    if (pickup > 0) {
+    if (mapStart != null) {
+      final from = mapStart.$1;
+      final bars = [
+        for (final bar in _bars(map!, from + lastEnd))
+          if (bar.$1 >= from) bar,
+      ];
+      for (final (i, (start, length, t)) in bars.indexed) {
+        // Un primer compás corto (otro compás, o incompleto) es anacrusa.
+        final next = i + 1 < bars.length ? bars[i + 1] : null;
+        final isPickup =
+            i == 0 && next != null && (length < t.measureTicks || (t != next.$3 && length < next.$3.measureTicks));
+        measures.add(
+          Measure(
+            number: isPickup ? '0' : '${number++}',
+            tick: start - from,
+            length: length,
+            time: isPickup ? next.$3 : t,
+            fifths: fifths,
+            implicit: isPickup,
+          ),
+        );
+      }
+    } else if (pickup > 0) {
       measures.add(Measure(number: '0', tick: 0, length: pickup, time: time, fifths: fifths, implicit: true));
       tick = pickup;
     }
-    do {
-      measures.add(Measure(number: '${number++}', tick: tick, length: time.measureTicks, time: time, fifths: fifths));
-      tick += time.measureTicks;
-    } while (tick < lastEnd);
+    if (mapStart == null) {
+      do {
+        measures.add(Measure(number: '${number++}', tick: tick, length: time.measureTicks, time: time, fifths: fifths));
+        tick += time.measureTicks;
+      } while (tick < lastEnd);
+    }
     final lastBeat = _floorDiv(onsets.last.tick, pt);
     final quarterBpm = followed
         ? settings.quarterBpm
@@ -504,6 +558,34 @@ class PerformanceTranscriber {
 
   static int _floorDiv(int a, int b) => (a / b).floor();
 
+  /// Los compases de [map] (inicio, duración, compás) desde el principio
+  /// hasta cubrir [until]. Un cambio de compás antes de terminar uno lo
+  /// deja incompleto.
+  List<(int, int, TimeSignature)> _bars(List<(int, TimeSignature)> map, int until) {
+    final bars = <(int, int, TimeSignature)>[];
+    var start = 0;
+    var k = 0;
+    do {
+      while (k + 1 < map.length && map[k + 1].$1 <= start) {
+        k++;
+      }
+      final t = map.isEmpty ? settings.time : map[k].$2;
+      var length = t.measureTicks;
+      if (k + 1 < map.length && map[k + 1].$1 < start + length) length = map[k + 1].$1 - start;
+      bars.add((start, length, t));
+      start += length;
+    } while (start < until);
+    return bars;
+  }
+
+  /// Dónde empieza la partitura: el compás de la primera nota ([first]),
+  /// sin los vacíos de antes (salvo que no empiece en un pulso: quitarlos
+  /// descolocaría la rejilla), y su compás.
+  (int, TimeSignature) _mapStart(List<(int, TimeSignature)> map, int first) {
+    final bar = _bars(map, first + 1).last;
+    return bar.$1 % _pt == 0 ? (bar.$1, bar.$3) : (0, _bars(map, 1).first.$3);
+  }
+
   /// Notas de la toma con inicio y final; el pedal de resonancia alarga las
   /// que se sueltan con él pisado. Se ignora el canal de percusión (el
   /// metrónomo) y los roces de menos de 25 ms.
@@ -533,7 +615,7 @@ class PerformanceTranscriber {
           prev.off = e.timeMicros;
           pedalHeld.remove(prev);
         }
-        final n = _RawNote(e.timeMicros, take.durationMicros, midi, e.data2);
+        final n = _RawNote(e.timeMicros, take.durationMicros, midi, e.data2, e.channel);
         open[midi] = n;
         out.add(n);
       } else if (e.isNoteOff) {
@@ -567,7 +649,7 @@ class PerformanceTranscriber {
 
     return [
       for (final n in out)
-        if (n.off - n.on >= 25000 && !smudge(n)) n,
+        if (n.off - n.on >= 25000 && (_exact || !smudge(n))) n,
     ];
   }
 
@@ -575,7 +657,8 @@ class PerformanceTranscriber {
   List<_Onset> _onsets(List<_RawNote> notes) {
     final out = <_Onset>[];
     for (final n in notes) {
-      if (out.isEmpty || !_sameAttack(out.last, n)) out.add(_Onset(n.on.toDouble()));
+      final same = out.isNotEmpty && (_exact ? n.on - out.last.notes.first.on <= 35000 : _sameAttack(out.last, n));
+      if (!same) out.add(_Onset(n.on.toDouble()));
       out.last.notes.add(n);
     }
     for (final o in out) {
@@ -1069,9 +1152,11 @@ class PerformanceTranscriber {
       final next = i + 1 < groups.length ? groups[i + 1].tick : end;
       if (g.tick > pos) out.addAll(_rests(score, pos, g.tick, staff));
       var stop = math.min(next, notes.map((n) => n.endTick).reduce(math.max));
-      if (next - stop < pt) {
+      // En un archivo, un hueco es silencio salvo que sea solo la
+      // articulación (menos de un tercio de lo que dura la nota).
+      if (_exact ? (next - stop) * 3 <= stop - g.tick : next - stop < pt) {
         stop = next;
-      } else {
+      } else if (!_exact) {
         stop = math.min(next, ((stop + pt - 1) ~/ pt) * pt);
       }
       stop = math.max(stop, g.tick + 1);

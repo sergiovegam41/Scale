@@ -17,6 +17,7 @@ export 'src/model/chord_line.dart';
 export 'src/model/song_draft.dart';
 export 'src/model/song_history.dart';
 export 'src/play/song_follower.dart';
+export 'src/score/midi_file.dart';
 export 'src/score/musicxml_reader.dart';
 export 'src/score/musicxml_writer.dart';
 export 'src/score/score.dart';

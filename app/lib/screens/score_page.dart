@@ -75,6 +75,52 @@ class _ScorePageState extends State<ScorePage> {
     player.seek(tick);
   }
 
+  /// Inicio del bucle ya marcado, esperando el final: (pulso, compás).
+  (int, String)? _pendingA;
+
+  String _numberAt(int playTick) => score.measures[timeline.order[timeline.playedMeasureAt(playTick)].index].number;
+
+  /// Bucle A–B en tres toques: el compás donde se está es el inicio; luego
+  /// el compás donde se está es el final; un tercer toque lo quita.
+  void _loopTap() {
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    if (player.looping) {
+      player.clearLoop();
+      messenger.showSnackBar(const SnackBar(content: Text('Bucle quitado: sigue hasta el final.')));
+      return;
+    }
+    final pm = player.measure;
+    final start = pm.playTick;
+    final end = start + score.measures[pm.index].length;
+    final a = _pendingA;
+    if (a == null) {
+      setState(() => _pendingA = (start, player.measureNumber));
+      messenger.showSnackBar(
+        SnackBar(
+          duration: const Duration(seconds: 6),
+          content: Text(
+            'El bucle empieza en el compás ${player.measureNumber}. '
+            'Ve al último compás que quieres repetir (tocando una nota) y vuelve a pulsar Bucle.',
+          ),
+        ),
+      );
+      return;
+    }
+    // Si el segundo compás está antes que el primero, se ordenan.
+    final aEnd = a.$1 + score.measures[timeline.order[timeline.playedMeasureAt(a.$1)].index].length;
+    final from = start < a.$1 ? start : a.$1;
+    final to = start < a.$1 ? aEnd : (end > aEnd ? end : aEnd);
+    setState(() => _pendingA = null);
+    player.setLoop(from, to);
+    messenger.showSnackBar(SnackBar(content: Text('Se repite del compás ${_numberAt(from)} al ${_numberAt(to - 1)}.')));
+  }
+
+  String get _loopLabel {
+    if (player.looping) return 'c. ${_numberAt(player.loopA!)}–${_numberAt(player.loopB! - 1)}';
+    if (_pendingA != null) return 'Desde c. ${_pendingA!.$2}…';
+    return 'Bucle';
+  }
+
   void _zoom(int delta) {
     setState(() => zoom = (zoom + delta).clamp(25, 80));
     viewer.setZoom(zoom);
@@ -156,6 +202,7 @@ class _ScorePageState extends State<ScorePage> {
       score = next;
       timeline = ScoreTimeline.of(next);
       player.timeline = timeline;
+      _pendingA = null;
     });
     player.seek(0);
   }
@@ -268,6 +315,26 @@ class _ScorePageState extends State<ScorePage> {
             icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
           ),
           TextButton(onPressed: _pickSpeed, child: Text('${(player.speed * 100).round()} %')),
+          if (!compact) ...[
+            IconButton(
+              tooltip: player.metronome ? 'Quitar el metrónomo' : 'Metrónomo mientras suena',
+              isSelected: player.metronome,
+              onPressed: () => player.metronome = !player.metronome,
+              icon: const Icon(Icons.av_timer_outlined),
+              selectedIcon: const Icon(Icons.av_timer),
+            ),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: FilterChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Icon(Icons.repeat, size: 18),
+                label: Text(_loopLabel),
+                tooltip: 'Repetir un pasaje: marca el primer compás y luego el último',
+                selected: player.looping || _pendingA != null,
+                onSelected: (_) => _loopTap(),
+              ),
+            ),
+          ],
           if (player.canPlayAsPlayed && !compact)
             Padding(
               padding: const EdgeInsets.only(left: 4, right: 4),
@@ -294,11 +361,22 @@ class _ScorePageState extends State<ScorePage> {
               'hand0' => _toggleHand(_hands[0].$3),
               'hand1' => _toggleHand(_hands[1].$3),
               'asPlayed' => player.asPlayed = !player.asPlayed,
+              'metronome' => player.metronome = !player.metronome,
+              'loop' => _loopTap(),
               'rewrite' => _rewrite(),
               _ => _showInfo(),
             },
             itemBuilder: (_) => [
               if (compact) ...[
+                CheckedPopupMenuItem(value: 'metronome', checked: player.metronome, child: const Text('Metrónomo')),
+                PopupMenuItem(
+                  value: 'loop',
+                  child: Text(
+                    player.looping
+                        ? 'Quitar el bucle (${_loopLabel.substring(3)})'
+                        : (_pendingA != null ? 'Bucle: hasta este compás' : 'Bucle: desde este compás'),
+                  ),
+                ),
                 const PopupMenuItem(value: 'in', child: Text('Más grande')),
                 const PopupMenuItem(value: 'out', child: Text('Más pequeña')),
                 for (final (i, (_, name, key)) in _hands.indexed)
