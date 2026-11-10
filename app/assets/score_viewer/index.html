@@ -5,14 +5,17 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
   <title>Partitura</title>
   <style>
-    :root { --paper: #f6f3ea; --ink: #1d1b16; --hl: #3949ab; --hl-soft: rgba(57, 73, 171, 0.14); }
+    :root { --paper: #f6f3ea; --ink: #1d1b16; --hl: #3949ab; --hl-soft: rgba(57, 73, 171, 0.14); --ok: #2e7d32; --miss: rgba(198, 40, 40, 0.32); }
     html { overflow-y: scroll; overflow-x: hidden; }
     html, body { margin: 0; background: var(--paper); color: var(--ink); -webkit-tap-highlight-color: transparent; }
     body { font: 15px system-ui, sans-serif; overscroll-behavior: none; }
     #score { padding: 4px 0 45vh; }
     #score svg { display: block; margin: 0 auto; color: var(--ink); }
+    #score g.ok, #score g.ok * { fill: var(--ok) !important; stroke: var(--ok) !important; color: var(--ok) !important; }
     #score g.hl, #score g.hl * { fill: var(--hl) !important; stroke: var(--hl) !important; color: var(--hl) !important; }
     #band { position: absolute; left: 0; right: 0; background: var(--hl-soft); pointer-events: none; display: none; border-radius: 4px; }
+    #band { transition: background-color 120ms; }
+    #band.miss { background: var(--miss); }
     #status { position: fixed; inset: 0; display: flex; align-items: center; justify-content: center; color: #6b665a; text-align: center; padding: 24px; pointer-events: none; }
   </style>
 </head>

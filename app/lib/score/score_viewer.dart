@@ -30,6 +30,9 @@ class ScoreViewerController {
 
   Future<void> setZoom(int zoom) async => _state?._run('scale.setZoom($zoom)');
 
+  /// Destello rojo en el cursor (una nota equivocada).
+  Future<void> flash() async => _state?._run('scale.flash()');
+
   /// Recorre la partitura desplazándola y mide cuadros por segundo.
   Future<void> bench() async => _state?._run('scale.bench(4000)');
 }
@@ -41,6 +44,7 @@ class ScoreViewer extends StatefulWidget {
     super.key,
     required this.score,
     required this.lit,
+    this.marked,
     this.controller,
     this.zoom = 45,
     this.onTapNote,
@@ -52,6 +56,9 @@ class ScoreViewer extends StatefulWidget {
 
   /// Ids de las notas a resaltar.
   final ValueListenable<List<String>> lit;
+
+  /// Ids de las notas ya tocadas (en verde), en el modo espera.
+  final ValueListenable<List<String>>? marked;
   final ScoreViewerController? controller;
   final int zoom;
   final ValueChanged<String>? onTapNote;
@@ -86,6 +93,7 @@ class _ScoreViewerState extends State<ScoreViewer> {
     super.initState();
     widget.controller?._state = this;
     widget.lit.addListener(_onLit);
+    widget.marked?.addListener(_onLit);
     ScoreServer.instance().then((s) {
       if (mounted) setState(() => _server = s);
     }, onError: (Object e) {
@@ -100,6 +108,10 @@ class _ScoreViewerState extends State<ScoreViewer> {
       old.lit.removeListener(_onLit);
       widget.lit.addListener(_onLit);
     }
+    if (old.marked != widget.marked) {
+      old.marked?.removeListener(_onLit);
+      widget.marked?.addListener(_onLit);
+    }
     if (old.controller != widget.controller) {
       old.controller?._state = null;
       widget.controller?._state = this;
@@ -112,6 +124,7 @@ class _ScoreViewerState extends State<ScoreViewer> {
     _watchdog?.cancel();
     _win?.dispose();
     widget.lit.removeListener(_onLit);
+    widget.marked?.removeListener(_onLit);
     if (widget.controller?._state == this) widget.controller?._state = null;
     super.dispose();
   }
@@ -146,7 +159,8 @@ class _ScoreViewerState extends State<ScoreViewer> {
     }
   }
 
-  void _onLit() => _run('scale.highlight(${jsonEncode(widget.lit.value)}, true)');
+  void _onLit() =>
+      _run('scale.highlight(${jsonEncode(widget.lit.value)}, true, ${jsonEncode(widget.marked?.value ?? const [])})');
 
   Future<void> _load() async {
     final server = _server;

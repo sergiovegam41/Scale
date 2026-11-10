@@ -4,6 +4,7 @@ import 'package:scale_core/scale_core.dart';
 
 import '../midi/midi_service.dart';
 import '../score/score_player.dart';
+import '../score/score_practice.dart';
 import '../score/score_viewer.dart';
 import '../storage/score_repository.dart';
 import '../widgets/responsive.dart';
@@ -18,6 +19,7 @@ class ScorePage extends StatefulWidget {
     this.repo,
     this.notation = Notation.american,
     this.autoplay = false,
+    this.practice = PracticeMode.off,
   });
 
   final Score score;
@@ -30,6 +32,9 @@ class ScorePage extends StatefulWidget {
   /// Empieza a sonar en cuanto se dibuja (para pruebas).
   final bool autoplay;
 
+  /// Abrir ya practicando (para pruebas).
+  final PracticeMode practice;
+
   @override
   State<ScorePage> createState() => _ScorePageState();
 }
@@ -38,6 +43,9 @@ class _ScorePageState extends State<ScorePage> {
   late Score score = widget.score;
   late ScoreTimeline timeline = ScoreTimeline.of(score);
   late final ScorePlayer player = ScorePlayer(widget.midi, timeline);
+  late final ScorePractice practice = ScorePractice(player)
+    ..misses.addListener(() => viewer.flash())
+    ..summary.addListener(_onSummary);
   bool rewriting = false;
   final ScoreViewerController viewer = ScoreViewerController();
   int zoom = 45;
@@ -48,9 +56,38 @@ class _ScorePageState extends State<ScorePage> {
 
   @override
   void dispose() {
+    practice.dispose();
     player.dispose();
     super.dispose();
   }
+
+  /// Al terminar la pieza (o una vuelta del bucle) practicando.
+  void _onSummary() {
+    final s = practice.summary.value;
+    if (s == null || !mounted) return;
+    final review = s.review;
+    final messenger = ScaffoldMessenger.of(context)..hideCurrentSnackBar();
+    messenger.showSnackBar(
+      SnackBar(
+        duration: Duration(seconds: review == null ? 5 : 10),
+        content: Text(s.text),
+        action: review == null || player.looping
+            ? null
+            : SnackBarAction(label: 'Repasar ese compás', onPressed: () => _loopPlayed(review)),
+      ),
+    );
+  }
+
+  /// Bucle sobre un compás desplegado.
+  void _loopPlayed(int played) {
+    final pm = timeline.order[played];
+    final start = pm.playTick;
+    player.setLoop(start, start + score.measures[pm.index].length);
+    setState(() => _pendingA = null);
+  }
+
+  void _togglePractice() =>
+      practice.setMode(practice.mode == PracticeMode.off ? PracticeMode.wait : PracticeMode.off);
 
   /// Las dos manos, si la partitura es de piano: dos pentagramas de una
   /// parte, o dos partes de un pentagrama.
@@ -204,6 +241,7 @@ class _ScorePageState extends State<ScorePage> {
       player.timeline = timeline;
       _pendingA = null;
     });
+    practice.refresh();
     player.seek(0);
   }
 
@@ -239,16 +277,28 @@ class _ScorePageState extends State<ScorePage> {
       body: SafeArea(
         child: Column(
           children: [
-            ListenableBuilder(listenable: player, builder: (context, _) => _bar(context, scheme, compact)),
+            ListenableBuilder(
+              listenable: Listenable.merge([player, practice]),
+              builder: (context, _) => Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  _bar(context, scheme, compact),
+                  if (practice.mode != PracticeMode.off) _practiceBar(context, scheme),
+                ],
+              ),
+            ),
             const Divider(height: 1),
             Expanded(
               child: ScoreViewer(
                 score: score,
                 lit: player.lit,
+                marked: practice.done,
                 controller: viewer,
                 zoom: zoom,
                 onTapNote: _tapNote,
                 onLoaded: (i) {
+                  if (_firstDrawMs == null) practice.setMode(widget.practice);
                   if (_firstDrawMs == null && widget.autoplay) player.play();
                   _firstDrawMs ??= _opened.elapsedMilliseconds;
                   debugPrint('Visor: ${i.data} · abierto en ${_opened.elapsedMilliseconds} ms');
@@ -272,6 +322,86 @@ class _ScorePageState extends State<ScorePage> {
     );
   }
 
+  /// Barra de práctica: esperar o seguir, qué mano, aciertos y fallos.
+  Widget _practiceBar(BuildContext context, ColorScheme scheme) {
+    final text = Theme.of(context).textTheme;
+    final gate = practice.gate;
+    final hand = practice.hand;
+    final handIndex = hand == null ? 0 : (_hands.indexWhere((h) => h.$3 == hand) + 1);
+    final String status;
+    if (practice.mode == PracticeMode.wait && gate != null) {
+      if (gate.finished) {
+        status = 'Terminaste: ${gate.hits} bien · ${gate.misses} mal';
+      } else if (gate.stepsDone == 0 && !player.playing) {
+        status = 'Toca las notas azules (o dale a reproducir) para empezar';
+      } else {
+        status = '${player.waiting ? 'Te espero · ' : ''}${gate.hits} bien · ${gate.misses} mal';
+      }
+    } else {
+      status = practice.followPosition < 0
+          ? 'Toca a tu ritmo: la partitura te sigue'
+          : 'Vas en el compás ${player.measureNumber}';
+    }
+    return Container(
+      color: scheme.secondaryContainer.withValues(alpha: 0.35),
+      padding: const EdgeInsets.fromLTRB(12, 2, 4, 4),
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: [
+            SegmentedButton<PracticeMode>(
+              showSelectedIcon: false,
+              style: const ButtonStyle(visualDensity: VisualDensity.compact),
+              segments: const [
+                ButtonSegment(
+                  value: PracticeMode.wait,
+                  icon: Icon(Icons.hourglass_bottom, size: 18),
+                  label: Text('Esperarme'),
+                  tooltip: 'La música avanza a tempo y se detiene hasta que tocas cada nota',
+                ),
+                ButtonSegment(
+                  value: PracticeMode.follow,
+                  icon: Icon(Icons.trending_flat, size: 18),
+                  label: Text('Seguirme'),
+                  tooltip: 'Toca a tu ritmo: la partitura va donde vas y pasa las páginas',
+                ),
+              ],
+              selected: {practice.mode},
+              onSelectionChanged: (v) => practice.setMode(v.first),
+            ),
+            if (_hands.length == 2) ...[
+              const SizedBox(width: 8),
+              SegmentedButton<int>(
+                showSelectedIcon: false,
+                style: const ButtonStyle(visualDensity: VisualDensity.compact),
+                segments: const [
+                  ButtonSegment(value: 0, label: Text('Las dos')),
+                  ButtonSegment(value: 1, label: Text('Der.'), tooltip: 'Tocas la mano derecha; la izquierda suena sola'),
+                  ButtonSegment(value: 2, label: Text('Izq.'), tooltip: 'Tocas la mano izquierda; la derecha suena sola'),
+                ],
+                selected: {handIndex},
+                onSelectionChanged: (v) => practice.setHand(v.first == 0 ? null : _hands[v.first - 1].$3),
+              ),
+            ],
+            const SizedBox(width: 12),
+            Text(status, style: text.bodyMedium),
+            const SizedBox(width: 8),
+            TextButton.icon(
+              onPressed: practice.restart,
+              icon: const Icon(Icons.replay, size: 18),
+              label: const Text('De nuevo'),
+            ),
+            IconButton(
+              tooltip: 'Dejar de practicar',
+              onPressed: () => practice.setMode(PracticeMode.off),
+              icon: const Icon(Icons.close),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
   Widget _bar(BuildContext context, ColorScheme scheme, bool compact) {
     final text = Theme.of(context).textTheme;
     final hands = [
@@ -288,6 +418,7 @@ class _ScorePageState extends State<ScorePage> {
         ),
     ];
     final noPiano = widget.midi.connected == null;
+    final practicing = practice.mode != PracticeMode.off;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
       child: Row(
@@ -311,10 +442,23 @@ class _ScorePageState extends State<ScorePage> {
           IconButton(tooltip: 'Al principio', onPressed: player.stop, icon: const Icon(Icons.skip_previous)),
           IconButton.filled(
             tooltip: player.playing ? 'Pausa' : 'Reproducir',
-            onPressed: player.toggle,
+            onPressed: practice.mode == PracticeMode.follow ? null : player.toggle,
             icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
           ),
           TextButton(onPressed: _pickSpeed, child: Text('${(player.speed * 100).round()} %')),
+          if (!compact)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: FilterChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Icon(Icons.piano, size: 18),
+                label: const Text('Tocar yo'),
+                showCheckmark: false,
+                tooltip: 'Practicar tocando en el teclado: la partitura te espera o te sigue',
+                selected: practicing,
+                onSelected: (_) => _togglePractice(),
+              ),
+            ),
           if (!compact) ...[
             IconButton(
               tooltip: player.metronome ? 'Quitar el metrónomo' : 'Metrónomo mientras suena',
@@ -335,7 +479,7 @@ class _ScorePageState extends State<ScorePage> {
               ),
             ),
           ],
-          if (player.canPlayAsPlayed && !compact)
+          if (player.canPlayAsPlayed && !compact && !practicing)
             Padding(
               padding: const EdgeInsets.only(left: 4, right: 4),
               child: SegmentedButton<bool>(
@@ -349,7 +493,7 @@ class _ScorePageState extends State<ScorePage> {
                 onSelectionChanged: (s) => player.asPlayed = s.first,
               ),
             ),
-          if (!compact) ...hands,
+          if (!compact && !practicing) ...hands,
           if (!compact) ...[
             IconButton(tooltip: 'Más pequeña', onPressed: () => _zoom(-5), icon: const Icon(Icons.zoom_out)),
             IconButton(tooltip: 'Más grande', onPressed: () => _zoom(5), icon: const Icon(Icons.zoom_in)),
@@ -363,11 +507,13 @@ class _ScorePageState extends State<ScorePage> {
               'asPlayed' => player.asPlayed = !player.asPlayed,
               'metronome' => player.metronome = !player.metronome,
               'loop' => _loopTap(),
+              'practice' => _togglePractice(),
               'rewrite' => _rewrite(),
               _ => _showInfo(),
             },
             itemBuilder: (_) => [
               if (compact) ...[
+                CheckedPopupMenuItem(value: 'practice', checked: practicing, child: const Text('Tocar yo')),
                 CheckedPopupMenuItem(value: 'metronome', checked: player.metronome, child: const Text('Metrónomo')),
                 PopupMenuItem(
                   value: 'loop',

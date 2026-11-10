@@ -7,6 +7,7 @@ import 'package:scale_core/scale_core.dart';
 import '../analysis/chord_engine.dart';
 import '../midi/keyboard_state.dart';
 import '../midi/midi_service.dart';
+import '../score/score_practice.dart';
 import '../settings.dart';
 import '../storage/score_repository.dart';
 import '../storage/song_repository.dart';
@@ -68,7 +69,12 @@ class _HomePageState extends State<HomePage> {
         Navigator.of(context).push(
           MaterialPageRoute(
             builder: (_) =>
-                ScorePage(score: score, midi: widget.midi, autoplay: Platform.environment['SCALE_AUTOPLAY'] == '1'),
+                ScorePage(
+                  score: score,
+                  midi: widget.midi,
+                  autoplay: Platform.environment['SCALE_AUTOPLAY'] == '1',
+                  practice: PracticeMode.values.asNameMap()[Platform.environment['SCALE_PRACTICE']] ?? PracticeMode.off,
+                ),
           ),
         );
       });

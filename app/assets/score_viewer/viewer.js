@@ -15,6 +15,8 @@
   /** id del SVG → id de Scale (para los toques). */
   let toScale = new Map();
   let lit = [];
+  let okEls = [];
+  let flashTimer = null;
 
   // Puente con la app: en Android, el canal de webview_flutter (ScaleBridge);
   // en Windows, los manejadores de flutter_inappwebview.
@@ -141,10 +143,13 @@
     return el.closest('g.system') || el.closest('g.measure') || el;
   }
 
-  /** Resalta las notas [ids] y lleva el cursor a la primera. */
-  function highlight(ids, follow) {
+  /** Resalta las notas [ids] (y en verde las ya tocadas [ok]) y lleva el
+   * cursor a la primera. */
+  function highlight(ids, follow, ok) {
     for (const el of lit) el.classList.remove('hl');
+    for (const el of okEls) el.classList.remove('ok');
     lit = [];
+    okEls = [];
     for (const id of ids) {
       const el = byId.get(id);
       if (el) {
@@ -152,12 +157,20 @@
         lit.push(el);
       }
     }
-    if (!lit.length) {
+    for (const id of ok || []) {
+      const el = byId.get(id);
+      if (el) {
+        el.classList.add('ok');
+        okEls.push(el);
+      }
+    }
+    const anchor = lit[0] || okEls[0];
+    if (!anchor) {
       cursorEl.style.display = 'none';
       return;
     }
-    const noteRect = lit[0].getBoundingClientRect();
-    const sysRect = systemOf(lit[0]).getBoundingClientRect();
+    const noteRect = anchor.getBoundingClientRect();
+    const sysRect = systemOf(anchor).getBoundingClientRect();
     const top = sysRect.top + window.scrollY - 6;
     cursorEl.style.display = 'block';
     cursorEl.style.top = top + 'px';
@@ -175,6 +188,13 @@
 
   function clear() {
     highlight([], false);
+  }
+
+  /** Destello rojo del cursor: una nota equivocada. */
+  function flash() {
+    cursorEl.classList.add('miss');
+    clearTimeout(flashTimer);
+    flashTimer = setTimeout(() => cursorEl.classList.remove('miss'), 280);
   }
 
   /** Mide la fluidez: recorre la partitura con desplazamiento animado y
@@ -223,7 +243,7 @@
     }, 300);
   });
 
-  window.scale = { load, highlight, clear, bench, setZoom: (z) => { zoom = z; if (lastUrl) load(lastUrl.url, lastUrl.notesUrl); } };
+  window.scale = { load, highlight, clear, flash, bench, setZoom: (z) => { zoom = z; if (lastUrl) load(lastUrl.url, lastUrl.notesUrl); } };
 
   function start() {
     try {

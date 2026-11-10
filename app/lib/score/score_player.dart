@@ -5,6 +5,14 @@ import 'package:scale_core/scale_core.dart';
 
 import '../midi/midi_service.dart';
 
+/// Lo que frena la reproducción en el modo espera: el pulso en que hay que
+/// esperar a quien toca, y el aviso de que la posición cambió por otra
+/// razón (un salto, el bucle) para volver a esperar desde ahí.
+abstract interface class PlaybackGate {
+  int? get holdTick;
+  void moved(int tick, {required bool loop});
+}
+
 /// Reproduce una partitura por el piano (MIDI de salida) y lleva la posición
 /// para el cursor del visor.
 ///
@@ -95,8 +103,35 @@ class ScorePlayer extends ChangeNotifier {
     final a = loopA;
     final b = loopB;
     if (a == null || b == null || tick < b) return false;
-    seek(a);
+    _seek(a, loop: true);
     return true;
+  }
+
+  /// Modo espera: la música avanza a tempo, pero se detiene en
+  /// [PlaybackGate.holdTick] hasta que quien toca lo toque.
+  PlaybackGate? gate;
+
+  /// Pentagramas que toca la persona: no suenan desde aquí.
+  final Set<(int, int)> silent = {};
+
+  /// Detenida esperando a quien toca.
+  bool get waiting => _waiting;
+  bool _waiting = false;
+
+  /// Quien toca llegó a [tick] antes que la música (o la música estaba
+  /// parada): se sigue desde ahí, sin cortar lo que suena.
+  void catchUp(int tick) {
+    final t = tick.clamp(0, timeline.lengthTicks);
+    if (!playing) {
+      _tick = t;
+      play();
+      return;
+    }
+    if (t <= _tick) return;
+    _anchorMicros = _microsAt(t);
+    _clock
+      ..reset()
+      ..start();
   }
 
   ScoreRecording? get recording => timeline.score.recording;
@@ -137,7 +172,7 @@ class ScorePlayer extends ChangeNotifier {
   /// la toma original suena todo.)
   final Set<(int, int)> muted = {};
 
-  bool _muted(PlayedNote n) => muted.contains((n.part, n.staff));
+  bool _muted(PlayedNote n) => muted.contains((n.part, n.staff)) || silent.contains((n.part, n.staff));
 
   bool get playing => _timer != null;
 
@@ -192,7 +227,10 @@ class ScorePlayer extends ChangeNotifier {
   void play({int? from}) {
     if (from != null) seek(from);
     if (_tick >= timeline.lengthTicks) seek(0);
-    if (looping && (_tick < loopA! || _tick >= loopB!)) _tick = loopA!;
+    if (looping && (_tick < loopA! || _tick >= loopB!)) {
+      _tick = loopA!;
+      gate?.moved(_tick, loop: false);
+    }
     _anchorMicros = _microsAt(_tick);
     // La toma desde el principio incluye la cuenta (y la anacrusa).
     if (asPlayed && _tick == 0) _anchorMicros = 0;
@@ -210,6 +248,7 @@ class ScorePlayer extends ChangeNotifier {
   void pause() {
     _timer?.cancel();
     _timer = null;
+    _waiting = false;
     _clock.stop();
     _allOff();
     notifyListeners();
@@ -222,7 +261,9 @@ class ScorePlayer extends ChangeNotifier {
   }
 
   /// Salta a [tick] (desplegado). Si está sonando, sigue desde ahí.
-  void seek(int tick) {
+  void seek(int tick) => _seek(tick, loop: false);
+
+  void _seek(int tick, {required bool loop}) {
     final wasPlaying = playing;
     if (wasPlaying) {
       _timer?.cancel();
@@ -231,6 +272,7 @@ class ScorePlayer extends ChangeNotifier {
     _allOff();
     _tick = tick.clamp(0, timeline.lengthTicks);
     _setLit(_litAt(_tick));
+    gate?.moved(_tick, loop: loop);
     if (wasPlaying) {
       play();
     } else {
@@ -281,10 +323,25 @@ class ScorePlayer extends ChangeNotifier {
   }
 
   void _pump() {
-    final tick = _tickAt(_nowMicros);
+    var tick = _tickAt(_nowMicros);
+    final hold = gate?.holdTick;
+    final wait = hold != null && tick >= hold;
+    if (wait) {
+      // El reloj se queda en el paso hasta que se toque.
+      tick = hold;
+      _anchorMicros = _microsAt(hold);
+      _clock
+        ..reset()
+        ..start();
+    }
+    if (wait != _waiting) {
+      _waiting = wait;
+      notifyListeners();
+    }
     if (_loopBack(tick)) return;
     _tick = tick;
-    _sendClicks(tick);
+    // Lo que va justo en el paso suena cuando se toque, no antes.
+    _sendClicks(wait ? tick - 1 : tick);
     final notes = timeline.notes;
     var changed = false;
     // Primero se apagan las que terminan (una nota repetida debe volver a sonar).
@@ -296,15 +353,16 @@ class ScorePlayer extends ChangeNotifier {
         changed = true;
       }
     }
-    while (_next < notes.length && notes[_next].start <= tick) {
+    while (_next < notes.length && (wait ? notes[_next].start < tick : notes[_next].start <= tick)) {
       final n = notes[_next++];
       if (n.end <= tick) continue; // se pasó (por ejemplo, tras una pausa larga)
       _on(n);
       _active.add(n);
       changed = true;
     }
-    if (changed) {
+    if (changed && gate == null) {
       // La más reciente primero: el cursor va a la nota que acaba de empezar.
+      // (En el modo espera se resaltan las notas que se esperan.)
       _setLit([for (final n in _active.reversed) n.noteId]);
     }
     if (tick >= timeline.lengthTicks && _active.isEmpty) {

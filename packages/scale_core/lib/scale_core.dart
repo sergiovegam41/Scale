@@ -20,6 +20,7 @@ export 'src/play/song_follower.dart';
 export 'src/score/midi_file.dart';
 export 'src/score/musicxml_reader.dart';
 export 'src/score/musicxml_writer.dart';
+export 'src/score/practice.dart';
 export 'src/score/score.dart';
 export 'src/score/score_timeline.dart';
 export 'src/score/transcriber.dart';
