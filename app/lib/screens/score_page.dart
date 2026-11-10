@@ -1,8 +1,10 @@
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:scale_core/scale_core.dart';
 
 import '../midi/midi_service.dart';
+import '../score/score_editing.dart';
 import '../score/score_player.dart';
 import '../score/score_practice.dart';
 import '../score/score_viewer.dart';
@@ -54,11 +56,414 @@ class _ScorePageState extends State<ScorePage> {
   final Stopwatch _opened = Stopwatch()..start();
   int? _firstDrawMs;
 
+  /// Corrigiendo la partitura (null si no).
+  ScoreEditing? editing;
+  int _editRev = 0;
+
+  /// Lo que se resalta al corregir: la nota elegida, o lo que suena.
+  final ValueNotifier<List<String>> _editLit = ValueNotifier(const []);
+  final FocusNode _keys = FocusNode(debugLabel: 'corregir');
+
+  @override
+  void initState() {
+    super.initState();
+    player.lit.addListener(_syncLit);
+    player.addListener(_syncLit);
+  }
+
   @override
   void dispose() {
+    editing?.dispose();
+    _editLit.dispose();
+    _keys.dispose();
     practice.dispose();
     player.dispose();
     super.dispose();
+  }
+
+  void _toast(String text) {
+    if (!mounted) return;
+    ScaffoldMessenger.of(context)
+      ..hideCurrentSnackBar()
+      ..showSnackBar(SnackBar(content: Text(text), duration: const Duration(seconds: 3)));
+  }
+
+  // ---------------------------------------------------------------------
+  // Corregir
+
+  void _syncLit() {
+    final ed = editing;
+    if (ed == null) return;
+    _editLit.value = player.playing ? player.lit.value : ed.selection.value;
+  }
+
+  /// Pulso desplegado (con repeticiones) de un pulso de la partitura: la
+  /// primera vez que suena.
+  int _playTickOf(int tick) {
+    final mi = score.measureAt(tick);
+    for (final pm in timeline.order) {
+      if (pm.index == mi) return pm.playTick + tick - score.measures[mi].tick;
+    }
+    return 0;
+  }
+
+  void _startEditing() {
+    if (editing != null) return;
+    player.stop();
+    practice.setMode(PracticeMode.off);
+    final ed = ScoreEditing(widget.midi, score)..onError = _toast;
+    ed.addListener(_onEditing);
+    _editRev = ed.editor.revision;
+    setState(() {
+      editing = ed;
+      score = ed.score;
+      timeline = ScoreTimeline.of(score);
+      player.timeline = timeline;
+      _pendingA = null;
+    });
+    _syncLit();
+    _keys.requestFocus();
+  }
+
+  void _onEditing() {
+    final ed = editing;
+    if (ed == null || !mounted) return;
+    if (ed.editor.revision != _editRev) {
+      _editRev = ed.editor.revision;
+      if (player.playing) player.pause();
+      score = ed.score;
+      timeline = ScoreTimeline.of(score);
+      player.timeline = timeline;
+    }
+    final loc = ed.location;
+    if (loc != null && !player.playing) player.seek(_playTickOf(loc.event.tick));
+    setState(() {});
+    _syncLit();
+  }
+
+  /// Termina de corregir: guarda o vuelve a la partitura de antes.
+  Future<void> _finishEditing({required bool save}) async {
+    final ed = editing;
+    if (ed == null) return;
+    player.stop();
+    final changed = ed.editor.dirty;
+    final Score next;
+    if (save && changed) {
+      next = ed.score..edited = true;
+      await widget.repo?.save(next);
+    } else {
+      next = ed.original;
+    }
+    ed
+      ..removeListener(_onEditing)
+      ..dispose();
+    if (!mounted) return;
+    setState(() {
+      editing = null;
+      score = next;
+      timeline = ScoreTimeline.of(next);
+      player.timeline = timeline;
+    });
+    practice.refresh();
+    if (save && changed) _toast('Correcciones guardadas');
+  }
+
+  /// Salir sin guardar (preguntando si había cambios).
+  Future<void> _closeEditing() async {
+    final ed = editing;
+    if (ed == null) return;
+    if (ed.editor.dirty) {
+      final choice = await _askUnsaved();
+      if (choice == null) return;
+      await _finishEditing(save: choice);
+    } else {
+      await _finishEditing(save: false);
+    }
+  }
+
+  /// true: guardar; false: descartar; null: seguir corrigiendo.
+  Future<bool?> _askUnsaved() => showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('¿Guardar las correcciones?'),
+      content: const Text('Hiciste cambios en la partitura que todavía no están guardados.'),
+      actions: [
+        TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Seguir corrigiendo')),
+        TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Descartar')),
+        FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Guardar')),
+      ],
+    ),
+  );
+
+  /// Aplica una corrección a la nota elegida.
+  void _edit(String Function(ScoreEditor editor, String id) change) {
+    final ed = editing;
+    final id = ed?.selected;
+    if (ed == null || id == null) {
+      _toast('Primero toca una nota en la partitura');
+      return;
+    }
+    if (player.playing) player.pause();
+    ed.apply(() => change(ed.editor, id));
+  }
+
+  void _nav(int direction) {
+    final ed = editing;
+    final id = ed?.selected;
+    if (ed == null || id == null) return;
+    final next = ed.editor.neighbor(id, direction);
+    if (next != null) ed.select(next);
+  }
+
+  void _figure(NoteType type, int dots) => _edit((e, id) => e.setDuration(id, type, dots));
+
+  void _toggleDot() {
+    final e = editing?.location?.event;
+    if (e == null) return;
+    final (type, dots) = ScoreEditor.writtenOf(e);
+    _figure(type, dots == 0 ? 1 : 0);
+  }
+
+  Future<void> _editChord() async {
+    final ed = editing;
+    final loc = ed?.location;
+    final id = ed?.selected;
+    if (ed == null || loc == null || id == null) return;
+    final tick = loc.event.tick;
+    final current = ed.editor.chordAt(tick);
+    final controller = TextEditingController(
+      text: current == null ? '' : ChordFormatter(notation: widget.notation).format(current.chord),
+    );
+    final measure = score.measures[score.measureAt(tick)].number;
+    final text = await showDialog<String>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: Text('Cifrado en el compás $measure'),
+        content: SizedBox(
+          width: 360,
+          child: TextField(
+            controller: controller,
+            autofocus: true,
+            decoration: const InputDecoration(
+              labelText: 'Acorde',
+              hintText: 'C, Am7, D/F#, Sol7…',
+              helperText: 'Va sobre la nota elegida. Vacío para quitarlo.',
+            ),
+            onSubmitted: (v) => Navigator.of(context).pop(v),
+          ),
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.of(context).pop(), child: const Text('Cancelar')),
+          if (current != null) TextButton(onPressed: () => Navigator.of(context).pop(''), child: const Text('Quitar')),
+          FilledButton(onPressed: () => Navigator.of(context).pop(controller.text), child: const Text('Escribir')),
+        ],
+      ),
+    );
+    controller.dispose();
+    if (text == null || !mounted) return;
+    ed.apply(() {
+      ed.editor.setChordSymbol(tick, text);
+      return id;
+    }, play: false);
+    _keys.requestFocus();
+  }
+
+  Map<ShortcutActivator, VoidCallback> get _shortcuts => {
+    const SingleActivator(LogicalKeyboardKey.arrowLeft): () => _nav(-1),
+    const SingleActivator(LogicalKeyboardKey.arrowRight): () => _nav(1),
+    const SingleActivator(LogicalKeyboardKey.arrowUp): () => _edit((e, id) => e.transpose(id, 1)),
+    const SingleActivator(LogicalKeyboardKey.arrowDown): () => _edit((e, id) => e.transpose(id, -1)),
+    const SingleActivator(LogicalKeyboardKey.arrowUp, control: true): () => _edit((e, id) => e.transpose(id, 12)),
+    const SingleActivator(LogicalKeyboardKey.arrowDown, control: true): () => _edit((e, id) => e.transpose(id, -12)),
+    const SingleActivator(LogicalKeyboardKey.delete): () => _edit((e, id) => e.delete(id)),
+    const SingleActivator(LogicalKeyboardKey.backspace): () => _edit((e, id) => e.delete(id)),
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true): () => editing?.undo(),
+    const SingleActivator(LogicalKeyboardKey.keyY, control: true): () => editing?.redo(),
+    const SingleActivator(LogicalKeyboardKey.keyZ, control: true, shift: true): () => editing?.redo(),
+    const SingleActivator(LogicalKeyboardKey.digit3): () => _figure(NoteType.sixteenth, 0),
+    const SingleActivator(LogicalKeyboardKey.digit4): () => _figure(NoteType.eighth, 0),
+    const SingleActivator(LogicalKeyboardKey.digit5): () => _figure(NoteType.quarter, 0),
+    const SingleActivator(LogicalKeyboardKey.digit6): () => _figure(NoteType.half, 0),
+    const SingleActivator(LogicalKeyboardKey.digit7): () => _figure(NoteType.whole, 0),
+    const SingleActivator(LogicalKeyboardKey.period): _toggleDot,
+    const SingleActivator(LogicalKeyboardKey.escape): _closeEditing,
+  };
+
+  static const _figures = [
+    NoteType.whole,
+    NoteType.half,
+    NoteType.quarter,
+    NoteType.eighth,
+    NoteType.sixteenth,
+    NoteType.thirtySecond,
+  ];
+
+  static String _capital(String s) => s.isEmpty ? s : s[0].toUpperCase() + s.substring(1);
+
+  /// Barra de corrección: la nota elegida y qué cambiarle.
+  Widget _editBar(BuildContext context, ColorScheme scheme) {
+    final ed = editing!;
+    final text = Theme.of(context).textTheme;
+    final loc = ed.location;
+    final e = loc?.event;
+    final written = e == null ? null : ScoreEditor.writtenOf(e);
+    final isNote = loc != null && loc.note != null && !loc.event.isRest;
+    final twoStaves = loc != null && loc.part.staves >= 2;
+    final figureEditable = e != null && !e.grace && e.tuplet == null;
+    final String describe;
+    if (loc == null || e == null || written == null) {
+      describe = 'Ninguna nota elegida';
+    } else {
+      final measure = score.measures[score.measureAt(e.tick)].number;
+      final figure = e.grace ? 'nota de adorno' : ScoreEditor.figureName(written.$1, written.$2);
+      final hand = twoStaves ? ' · ${e.staff == 1 ? 'mano derecha' : 'mano izquierda'}' : '';
+      final what = isNote
+          ? '${ScoreEditor.pitchName(loc.note!, widget.notation)}'
+                '${e.notes.length > 1 ? ' (acorde de ${e.notes.length})' : ''}'
+          : 'Silencio';
+      describe = '$what · $figure\nCompás $measure$hand';
+    }
+    Widget pitchButton(String label, String tooltip, int semitones) => Tooltip(
+      message: tooltip,
+      child: TextButton(
+        onPressed: isNote ? () => _edit((ed, id) => ed.transpose(id, semitones)) : null,
+        style: TextButton.styleFrom(
+          minimumSize: const Size(44, 40),
+          padding: const EdgeInsets.symmetric(horizontal: 8),
+        ),
+        child: Text(label),
+      ),
+    );
+    final accent = figureEditable ? scheme.primary : scheme.outline;
+    return Container(
+      color: scheme.tertiaryContainer.withValues(alpha: 0.35),
+      padding: const EdgeInsets.fromLTRB(8, 2, 8, 4),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          SingleChildScrollView(
+            scrollDirection: Axis.horizontal,
+            child: Row(
+              children: [
+                IconButton(
+                  tooltip: 'Deshacer (Ctrl+Z)',
+                  onPressed: ed.editor.canUndo ? ed.undo : null,
+                  icon: const Icon(Icons.undo),
+                ),
+                IconButton(
+                  tooltip: 'Rehacer (Ctrl+Y)',
+                  onPressed: ed.editor.canRedo ? ed.redo : null,
+                  icon: const Icon(Icons.redo),
+                ),
+                const SizedBox(width: 8),
+                IconButton(
+                  tooltip: 'Nota anterior (←)',
+                  onPressed: loc == null ? null : () => _nav(-1),
+                  icon: const Icon(Icons.chevron_left),
+                ),
+                SizedBox(
+                  width: 200,
+                  child: Text(describe, maxLines: 2, overflow: TextOverflow.ellipsis, style: text.bodyMedium),
+                ),
+                IconButton(
+                  tooltip: 'Nota siguiente (→)',
+                  onPressed: loc == null ? null : () => _nav(1),
+                  icon: const Icon(Icons.chevron_right),
+                ),
+                const SizedBox(width: 8),
+                pitchButton('−½', 'Medio tono abajo (↓)', -1),
+                pitchButton('+½', 'Medio tono arriba (↑)', 1),
+                pitchButton('−8ª', 'Una octava abajo (Ctrl+↓)', -12),
+                pitchButton('+8ª', 'Una octava arriba (Ctrl+↑)', 12),
+                Tooltip(
+                  message: 'Escribirla con la otra alteración (Do♯ ↔ Re♭)',
+                  child: TextButton(
+                    onPressed: isNote ? () => _edit((ed, id) => ed.respell(id)) : null,
+                    child: const Text('♯ ↔ ♭'),
+                  ),
+                ),
+                const SizedBox(width: 8),
+                PopupMenuButton<NoteType>(
+                  tooltip: 'Figura (teclas 3 a 7)',
+                  enabled: figureEditable,
+                  onSelected: (t) => _figure(t, 0),
+                  itemBuilder: (_) => [
+                    for (final t in _figures)
+                      CheckedPopupMenuItem(
+                        value: t,
+                        checked: written?.$1 == t,
+                        child: Text(_capital(ScoreEditor.figureName(t, 0))),
+                      ),
+                  ],
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 10),
+                    child: Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Icon(Icons.music_note, size: 18, color: accent),
+                        Text(
+                          written == null ? 'Figura' : _capital(ScoreEditor.figureName(written.$1, 0)),
+                          style: text.labelLarge?.copyWith(color: accent),
+                        ),
+                        Icon(Icons.arrow_drop_down, color: accent),
+                      ],
+                    ),
+                  ),
+                ),
+                FilterChip(
+                  visualDensity: VisualDensity.compact,
+                  label: const Text('Puntillo'),
+                  tooltip: 'Puntillo: la figura dura la mitad más (tecla .)',
+                  selected: (written?.$2 ?? 0) > 0,
+                  onSelected: figureEditable ? (_) => _toggleDot() : null,
+                ),
+                const SizedBox(width: 8),
+                if (twoStaves)
+                  TextButton.icon(
+                    onPressed: isNote ? () => _edit((ed, id) => ed.moveToStaff(id, e!.staff == 1 ? 2 : 1)) : null,
+                    icon: const Icon(Icons.swap_vert, size: 18),
+                    label: Text(e?.staff == 2 ? 'A la derecha' : 'A la izquierda'),
+                  ),
+                IconButton(
+                  tooltip: 'Borrar la nota (Supr)',
+                  onPressed: isNote ? () => _edit((ed, id) => ed.delete(id)) : null,
+                  icon: const Icon(Icons.delete_outline),
+                ),
+                TextButton.icon(
+                  onPressed: e == null ? null : _editChord,
+                  icon: const Icon(Icons.text_fields, size: 18),
+                  label: const Text('Cifrado'),
+                ),
+              ],
+            ),
+          ),
+          Row(
+            children: [
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.only(left: 8),
+                  child: Text(
+                    loc == null
+                        ? 'Toca una nota (o un silencio) en la partitura para corregirla.'
+                        : 'En el piano, toca la nota correcta (o el acorde, todo a la vez) y suelta: '
+                              'se cambia y pasa a la siguiente.',
+                    style: text.bodySmall?.copyWith(color: scheme.onSurfaceVariant),
+                  ),
+                ),
+              ),
+              TextButton(onPressed: _closeEditing, child: const Text('Descartar')),
+              const SizedBox(width: 4),
+              FilledButton.icon(
+                onPressed: () => _finishEditing(save: true),
+                icon: const Icon(Icons.check, size: 18),
+                label: Text(ed.editor.dirty ? 'Guardar' : 'Listo'),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   /// Al terminar la pieza (o una vuelta del bucle) practicando.
@@ -86,8 +491,7 @@ class _ScorePageState extends State<ScorePage> {
     setState(() => _pendingA = null);
   }
 
-  void _togglePractice() =>
-      practice.setMode(practice.mode == PracticeMode.off ? PracticeMode.wait : PracticeMode.off);
+  void _togglePractice() => practice.setMode(practice.mode == PracticeMode.off ? PracticeMode.wait : PracticeMode.off);
 
   /// Las dos manos, si la partitura es de piano: dos pentagramas de una
   /// parte, o dos partes de un pentagrama.
@@ -107,6 +511,13 @@ class _ScorePageState extends State<ScorePage> {
   });
 
   void _tapNote(String id) {
+    final ed = editing;
+    if (ed != null) {
+      if (player.playing) player.pause();
+      ed.select(id);
+      _keys.requestFocus();
+      return;
+    }
     final tick = timeline.firstTickOf(id);
     if (tick == null) return;
     player.seek(tick);
@@ -219,6 +630,22 @@ class _ScorePageState extends State<ScorePage> {
   Future<void> _rewrite() async {
     final rec = score.recording;
     if (rec == null) return;
+    if (score.edited) {
+      final go = await showDialog<bool>(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Volver a escribir'),
+          content: const Text(
+            'Esta partitura tiene correcciones hechas a mano. Al volver a escribirla desde la grabación se pierden.',
+          ),
+          actions: [
+            TextButton(onPressed: () => Navigator.of(context).pop(false), child: const Text('Cancelar')),
+            FilledButton(onPressed: () => Navigator.of(context).pop(true), child: const Text('Seguir')),
+          ],
+        ),
+      );
+      if (go != true || !mounted) return;
+    }
     final settings = await showDialog<TranscriptionSettings>(
       context: context,
       builder: (_) => _RewriteDialog(recording: rec, notation: widget.notation),
@@ -273,6 +700,24 @@ class _ScorePageState extends State<ScorePage> {
   Widget build(BuildContext context) {
     final scheme = Theme.of(context).colorScheme;
     final compact = context.isCompact;
+    final ed = editing;
+    return PopScope(
+      canPop: !(ed?.editor.dirty ?? false),
+      onPopInvokedWithResult: (didPop, _) async {
+        if (didPop) return;
+        final choice = await _askUnsaved();
+        if (choice == null || !mounted) return;
+        await _finishEditing(save: choice);
+        if (mounted) Navigator.of(this.context).pop();
+      },
+      child: CallbackShortcuts(
+        bindings: ed == null ? const {} : _shortcuts,
+        child: Focus(focusNode: _keys, autofocus: true, child: _scaffold(context, scheme, compact)),
+      ),
+    );
+  }
+
+  Widget _scaffold(BuildContext context, ColorScheme scheme, bool compact) {
     return Scaffold(
       body: SafeArea(
         child: Column(
@@ -285,6 +730,7 @@ class _ScorePageState extends State<ScorePage> {
                 children: [
                   _bar(context, scheme, compact),
                   if (practice.mode != PracticeMode.off) _practiceBar(context, scheme),
+                  if (editing != null) _editBar(context, scheme),
                 ],
               ),
             ),
@@ -292,10 +738,11 @@ class _ScorePageState extends State<ScorePage> {
             Expanded(
               child: ScoreViewer(
                 score: score,
-                lit: player.lit,
+                lit: editing != null ? _editLit : player.lit,
                 marked: practice.done,
                 controller: viewer,
                 zoom: zoom,
+                revision: editing?.editor.revision ?? 0,
                 onTapNote: _tapNote,
                 onLoaded: (i) {
                   if (_firstDrawMs == null) practice.setMode(widget.practice);
@@ -376,8 +823,16 @@ class _ScorePageState extends State<ScorePage> {
                 style: const ButtonStyle(visualDensity: VisualDensity.compact),
                 segments: const [
                   ButtonSegment(value: 0, label: Text('Las dos')),
-                  ButtonSegment(value: 1, label: Text('Der.'), tooltip: 'Tocas la mano derecha; la izquierda suena sola'),
-                  ButtonSegment(value: 2, label: Text('Izq.'), tooltip: 'Tocas la mano izquierda; la derecha suena sola'),
+                  ButtonSegment(
+                    value: 1,
+                    label: Text('Der.'),
+                    tooltip: 'Tocas la mano derecha; la izquierda suena sola',
+                  ),
+                  ButtonSegment(
+                    value: 2,
+                    label: Text('Izq.'),
+                    tooltip: 'Tocas la mano izquierda; la derecha suena sola',
+                  ),
                 ],
                 selected: {handIndex},
                 onSelectionChanged: (v) => practice.setHand(v.first == 0 ? null : _hands[v.first - 1].$3),
@@ -418,7 +873,8 @@ class _ScorePageState extends State<ScorePage> {
         ),
     ];
     final noPiano = widget.midi.connected == null;
-    final practicing = practice.mode != PracticeMode.off;
+    final editingNow = editing != null;
+    final practicing = practice.mode != PracticeMode.off || editingNow;
     return Padding(
       padding: const EdgeInsets.fromLTRB(4, 4, 8, 4),
       child: Row(
@@ -446,7 +902,20 @@ class _ScorePageState extends State<ScorePage> {
             icon: Icon(player.playing ? Icons.pause : Icons.play_arrow),
           ),
           TextButton(onPressed: _pickSpeed, child: Text('${(player.speed * 100).round()} %')),
-          if (!compact)
+          if (!compact && !editingNow)
+            Padding(
+              padding: const EdgeInsets.only(left: 4),
+              child: FilterChip(
+                visualDensity: VisualDensity.compact,
+                avatar: const Icon(Icons.edit, size: 18),
+                label: const Text('Corregir'),
+                showCheckmark: false,
+                tooltip: 'Corregir notas, figuras, manos y cifrado',
+                selected: false,
+                onSelected: (_) => _startEditing(),
+              ),
+            ),
+          if (!compact && !editingNow)
             Padding(
               padding: const EdgeInsets.only(left: 4),
               child: FilterChip(
@@ -455,11 +924,11 @@ class _ScorePageState extends State<ScorePage> {
                 label: const Text('Tocar yo'),
                 showCheckmark: false,
                 tooltip: 'Practicar tocando en el teclado: la partitura te espera o te sigue',
-                selected: practicing,
+                selected: practice.mode != PracticeMode.off,
                 onSelected: (_) => _togglePractice(),
               ),
             ),
-          if (!compact) ...[
+          if (!compact && !editingNow) ...[
             IconButton(
               tooltip: player.metronome ? 'Quitar el metrónomo' : 'Metrónomo mientras suena',
               isSelected: player.metronome,
@@ -508,12 +977,18 @@ class _ScorePageState extends State<ScorePage> {
               'metronome' => player.metronome = !player.metronome,
               'loop' => _loopTap(),
               'practice' => _togglePractice(),
+              'edit' => _startEditing(),
               'rewrite' => _rewrite(),
               _ => _showInfo(),
             },
             itemBuilder: (_) => [
-              if (compact) ...[
-                CheckedPopupMenuItem(value: 'practice', checked: practicing, child: const Text('Tocar yo')),
+              if (!editingNow) const PopupMenuItem(value: 'edit', child: Text('Corregir notas')),
+              if (compact && !editingNow) ...[
+                CheckedPopupMenuItem(
+                  value: 'practice',
+                  checked: practice.mode != PracticeMode.off,
+                  child: const Text('Tocar yo'),
+                ),
                 CheckedPopupMenuItem(value: 'metronome', checked: player.metronome, child: const Text('Metrónomo')),
                 PopupMenuItem(
                   value: 'loop',
@@ -534,7 +1009,7 @@ class _ScorePageState extends State<ScorePage> {
                     child: const Text('Oír como la toqué'),
                   ),
               ],
-              if (score.recording != null)
+              if (score.recording != null && !editingNow)
                 PopupMenuItem(value: 'rewrite', enabled: !rewriting, child: const Text('Volver a escribir…')),
               const PopupMenuItem(value: 'info', child: Text('Información y rendimiento')),
             ],

@@ -519,6 +519,7 @@ class Score {
     List<Measure>? measures,
     List<ScorePart>? parts,
     this.recording,
+    this.edited = false,
     DateTime? createdAt,
     DateTime? updatedAt,
   }) : measures = measures ?? [],
@@ -540,6 +541,7 @@ class Score {
       measures: [for (final m in j['measures'] as List<dynamic>) Measure.fromJson(m as Map<String, dynamic>)],
       parts: [for (final p in j['parts'] as List<dynamic>) ScorePart.fromJson(p as Map<String, dynamic>)],
       recording: j['recording'] == null ? null : ScoreRecording.fromJson(j['recording'] as Map<String, dynamic>),
+      edited: j['edited'] as bool? ?? false,
       createdAt: DateTime.tryParse(j['created'] as String? ?? ''),
       updatedAt: DateTime.tryParse(j['updated'] as String? ?? ''),
     );
@@ -556,6 +558,9 @@ class Score {
   /// Si salió de una grabación: la interpretación original, para oírla tal
   /// como se tocó o volver a escribirla con otros ajustes.
   ScoreRecording? recording;
+
+  /// Corregida a mano (al volver a escribir una grabación se pierde).
+  bool edited;
   DateTime createdAt;
   DateTime updatedAt;
 
@@ -592,5 +597,6 @@ class Score {
     'measures': [for (final m in measures) m.toJson()],
     'parts': [for (final p in parts) p.toJson()],
     if (recording != null) 'recording': recording!.toJson(),
+    if (edited) 'edited': true,
   };
 }

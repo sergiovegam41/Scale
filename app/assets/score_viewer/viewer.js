@@ -17,6 +17,7 @@
   let lit = [];
   let okEls = [];
   let flashTimer = null;
+  let loadSeq = 0;
 
   // Puente con la app: en Android, el canal de webview_flutter (ScaleBridge);
   // en Windows, los manejadores de flutter_inappwebview.
@@ -61,8 +62,18 @@
     toScale = new Map();
     let preserved = 0;
     const missing = [];
+    let total = 0;
     for (const n of notes) {
       const el = document.getElementById(n.id);
+      if (n.r) {
+        // Silencios: solo por id (para seleccionarlos al corregir).
+        if (el) {
+          byId.set(n.id, el);
+          toScale.set(n.id, n.id);
+        }
+        continue;
+      }
+      total++;
       if (el) {
         byId.set(n.id, el);
         toScale.set(n.id, n.id);
@@ -95,20 +106,24 @@
         }
       }
     }
-    return { preserved, matched, total: notes.length };
+    return { preserved, matched, total };
   }
 
   async function load(url, notesUrl, z) {
     if (!tk) return;
     if (z) zoom = z;
     lastUrl = { url, notesUrl };
-    status('Dibujando la partitura…');
+    const seq = ++loadSeq;
+    // Al volver a dibujar (tras una corrección) no se tapa la partitura.
+    const redraw = scoreEl.childElementCount > 0;
+    if (!redraw) status('Dibujando la partitura…');
     const t0 = performance.now();
     try {
       const [xml, notes] = await Promise.all([
         fetch(url, { cache: 'no-store' }).then((r) => r.text()),
         fetch(notesUrl, { cache: 'no-store' }).then((r) => r.json()),
       ]);
+      if (seq !== loadSeq) return;
       const t1 = performance.now();
       tk.setOptions(options());
       if (!tk.loadData(xml)) throw new Error('Verovio no pudo leer la partitura');
@@ -116,7 +131,9 @@
       const parts = [];
       for (let p = 1; p <= pages; p++) parts.push(tk.renderToSVG(p));
       const t2 = performance.now();
+      const scrollY = window.scrollY;
       scoreEl.innerHTML = parts.join('');
+      if (redraw) window.scrollTo(0, scrollY);
       lit = [];
       const index = buildIndex(notes);
       const t3 = performance.now();
@@ -227,11 +244,32 @@
     requestAnimationFrame(step);
   }
 
+  /** La nota o el silencio más cercano al toque (las cabezas son pequeñas
+   * para un dedo): hasta 36 px de distancia. */
+  function nearest(x, y) {
+    let best = null;
+    let bestD = 36 * 36;
+    for (const [id, el] of byId) {
+      const r = el.getBoundingClientRect();
+      const dx = x < r.left ? r.left - x : (x > r.right ? x - r.right : 0);
+      const dy = y < r.top ? r.top - y : (y > r.bottom ? y - r.bottom : 0);
+      const d = dx * dx + dy * dy;
+      if (d < bestD) {
+        bestD = d;
+        best = id;
+      }
+    }
+    return best;
+  }
+
   document.addEventListener('click', (ev) => {
     const el = ev.target.closest && ev.target.closest('g.note, g.chord, g.rest');
-    if (!el) return;
-    const note = el.classList.contains('chord') ? el.querySelector('g.note') : el;
-    const id = note && (toScale.get(note.id) || note.id);
+    let id = null;
+    if (el) {
+      const note = el.classList.contains('chord') ? el.querySelector('g.note') : el;
+      id = note && (toScale.get(note.id) || note.id);
+    }
+    if (!id) id = nearest(ev.clientX, ev.clientY);
     if (id) send('tap', { id });
   });
 

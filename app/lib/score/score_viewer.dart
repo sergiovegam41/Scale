@@ -47,6 +47,7 @@ class ScoreViewer extends StatefulWidget {
     this.marked,
     this.controller,
     this.zoom = 45,
+    this.revision = 0,
     this.onTapNote,
     this.onLoaded,
     this.onBench,
@@ -61,6 +62,12 @@ class ScoreViewer extends StatefulWidget {
   final ValueListenable<List<String>>? marked;
   final ScoreViewerController? controller;
   final int zoom;
+
+  /// Cambia cuando se corrige la partitura (sin cambiar de objeto): se vuelve
+  /// a dibujar.
+  final int revision;
+
+  /// Toque en una nota (o en un silencio): su id.
   final ValueChanged<String>? onTapNote;
   final ValueChanged<ViewerInfo>? onLoaded;
   final ValueChanged<Map<String, dynamic>>? onBench;
@@ -94,11 +101,14 @@ class _ScoreViewerState extends State<ScoreViewer> {
     widget.controller?._state = this;
     widget.lit.addListener(_onLit);
     widget.marked?.addListener(_onLit);
-    ScoreServer.instance().then((s) {
-      if (mounted) setState(() => _server = s);
-    }, onError: (Object e) {
-      if (mounted) setState(() => _error = 'No se pudo iniciar el visor: $e');
-    });
+    ScoreServer.instance().then(
+      (s) {
+        if (mounted) setState(() => _server = s);
+      },
+      onError: (Object e) {
+        if (mounted) setState(() => _error = 'No se pudo iniciar el visor: $e');
+      },
+    );
   }
 
   @override
@@ -116,7 +126,7 @@ class _ScoreViewerState extends State<ScoreViewer> {
       old.controller?._state = null;
       widget.controller?._state = this;
     }
-    if (old.score != widget.score && _ready) _load();
+    if ((old.score != widget.score || old.revision != widget.revision) && _ready) _load();
   }
 
   @override
@@ -177,8 +187,10 @@ class _ScoreViewerState extends State<ScoreViewer> {
     final xml = MusicXmlWriter.write(score);
     final notes = [
       for (final p in score.parts)
-        for (final e in p.events)
+        for (final e in p.events) ...[
           for (final n in e.notes) {'id': n.id, 'q': e.tick / ticksPerQuarter, 'm': n.midi},
+          if (e.isRest) {'id': e.id, 'r': 1},
+        ],
     ];
     return (xml, jsonEncode(notes));
   }
@@ -196,14 +208,17 @@ class _ScoreViewerState extends State<ScoreViewer> {
     final c = _android ??= WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFFF6F3EA))
-      ..addJavaScriptChannel('ScaleBridge', onMessageReceived: (m) {
-        try {
-          final msg = jsonDecode(m.message) as Map<String, dynamic>;
-          _onMessage(msg['name'] as String, msg['data']);
-        } catch (e) {
-          debugPrint('Visor: mensaje ilegible: $e');
-        }
-      })
+      ..addJavaScriptChannel(
+        'ScaleBridge',
+        onMessageReceived: (m) {
+          try {
+            final msg = jsonDecode(m.message) as Map<String, dynamic>;
+            _onMessage(msg['name'] as String, msg['data']);
+          } catch (e) {
+            debugPrint('Visor: mensaje ilegible: $e');
+          }
+        },
+      )
       ..setOnConsoleMessage((m) => debugPrint('Visor JS: ${m.message}'))
       ..loadRequest(server.viewerUrl);
     _eval = c.runJavaScript;
