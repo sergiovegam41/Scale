@@ -12,6 +12,8 @@ import '../settings.dart';
 import '../storage/score_repository.dart';
 import '../storage/song_repository.dart';
 import '../voice/singer_engine.dart';
+import '../web/web_search_page.dart';
+import '../web/web_sites.dart';
 import '../widgets/responsive.dart';
 import 'live_page.dart';
 import 'play_page.dart';
@@ -111,6 +113,35 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  void openScore(Score score) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ScorePage(
+          score: score,
+          midi: widget.midi,
+          repo: widget.scores,
+          notation: widget.settings.notation,
+        ),
+      ),
+    );
+  }
+
+  /// Buscar canciones o partituras en internet con el navegador de la app.
+  void searchWeb(WebWant want) {
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => WebSearchPage(
+          settings: widget.settings,
+          songs: widget.repo,
+          scores: widget.scores,
+          onOpenSong: openSong,
+          onOpenScore: openScore,
+          want: want,
+        ),
+      ),
+    );
+  }
+
   static const _tabs = [
     (Icons.piano, 'En vivo'),
     (Icons.library_music, 'Canciones'),
@@ -137,6 +168,7 @@ class _HomePageState extends State<HomePage> {
           settings: widget.settings,
           onOpen: openSong,
           onCreate: (song) => openSong(song, edit: true),
+          onSearchWeb: () => searchWeb(WebWant.chords),
         ),
         ScoresPage(
           repo: widget.scores,
@@ -145,6 +177,7 @@ class _HomePageState extends State<HomePage> {
           engine: widget.engine,
           songs: widget.repo,
           notation: widget.settings.notation,
+          onSearchWeb: () => searchWeb(WebWant.score),
         ),
         SingerPage(engine: singer, repo: widget.repo, settings: widget.settings),
         ToolsPage(midi: widget.midi, settings: widget.settings),

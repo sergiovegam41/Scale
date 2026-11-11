@@ -90,6 +90,29 @@ class AppSettings extends ChangeNotifier {
   /// Hay API key para el servicio elegido.
   bool get hasApiKey => apiKeyFor(_aiProvider).isNotEmpty;
 
+  /// Sitios de búsqueda usados hace poco (ids o dominios, el último primero).
+  List<String> get recentSites => List.unmodifiable(_recentSites);
+  void useSite(String id) {
+    final next = [id, ..._recentSites.where((s) => s != id)].take(12).toList();
+    _set(() => _recentSites = next, !listEquals(next, _recentSites));
+  }
+  List<String> _recentSites = [];
+
+  /// Sitios agregados por el usuario: nombre y dominio (se busca en Google
+  /// con `site:`).
+  List<({String name, String host})> get customSites => List.unmodifiable(_customSites);
+  void addCustomSite(String name, String host) {
+    final h = host.trim().toLowerCase();
+    if (h.isEmpty) return;
+    _set(
+      () => _customSites = [..._customSites.where((s) => s.host != h), (name: name.trim().isEmpty ? h : name.trim(), host: h)],
+      true,
+    );
+  }
+  void removeCustomSite(String host) =>
+      _set(() => _customSites = [..._customSites.where((s) => s.host != host)], _customSites.any((s) => s.host == host));
+  List<({String name, String host})> _customSites = [];
+
   /// Capa de transpose de la pantalla en vivo (se recuerda entre sesiones).
   int get liveLayer => _liveLayer;
   set liveLayer(int value) => _set(() => _liveLayer = value, value != _liveLayer);
@@ -145,6 +168,11 @@ class AppSettings extends ChangeNotifier {
       _groqTextModel = json['groqTextModel'] as String? ?? _groqTextModel;
       _groqVisionModel = json['groqVisionModel'] as String? ?? _groqVisionModel;
       _songSort = SongSort.values.asNameMap()[json['songSort']] ?? _songSort;
+      _recentSites = [for (final id in (json['recentSites'] as List?) ?? const []) id as String];
+      _customSites = [
+        for (final m in (json['customSites'] as List?) ?? const [])
+          if (m is Map) (name: '${m['name'] ?? m['host']}', host: '${m['host']}'),
+      ];
       _songOrder = [for (final id in (json['songOrder'] as List?) ?? const []) id as String];
       _archived = {for (final id in (json['archivedSongs'] as List?) ?? const []) id as String};
       _archiveSort = SongSort.values.asNameMap()[json['archiveSort']] ?? _archiveSort;
@@ -171,6 +199,8 @@ class AppSettings extends ChangeNotifier {
               'groqTextModel': _groqTextModel,
               'groqVisionModel': _groqVisionModel,
               'songSort': _songSort.name,
+              'recentSites': _recentSites,
+              'customSites': [for (final c in _customSites) {'name': c.name, 'host': c.host}],
               'songOrder': _songOrder,
               'archivedSongs': _archived.toList(),
               'archiveSort': _archiveSort.name,

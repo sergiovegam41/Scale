@@ -85,6 +85,9 @@ abstract class AiClient {
     required List<AiTurn> history,
     required Map<String, dynamic> schema,
     required String schemaName,
+
+    /// Tarea corta y simple: que piense poco y responda rápido.
+    bool quick = false,
   });
 }
 

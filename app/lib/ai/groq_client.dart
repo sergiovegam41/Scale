@@ -43,6 +43,7 @@ class GroqClient implements AiClient {
     required List<AiTurn> history,
     required Map<String, dynamic> schema,
     required String schemaName,
+    bool quick = false,
   }) async {
     final lastUser = history.lastIndexWhere((t) => t.fromUser);
     final images = lastUser < 0 ? const <ImportImage>[] : history[lastUser].images;
@@ -78,6 +79,8 @@ class GroqClient implements AiClient {
                 }
               : {'type': 'json_object'},
           'max_completion_tokens': 16000,
+          // Los gpt-oss permiten pedir menos razonamiento.
+          if (quick && model.startsWith('openai/gpt-oss')) 'reasoning_effort': 'low',
         },
       );
       if (response.statusCode == 200) return _reply(aiDecode(response.body));

@@ -25,14 +25,15 @@ class ClaudeClient implements AiClient {
     required List<AiTurn> history,
     required Map<String, dynamic> schema,
     required String schemaName,
+    bool quick = false,
   }) async {
     final messages = [for (final turn in history) _message(turn)];
     Map<String, dynamic> response;
     try {
-      response = await _post(system, messages, schema, fallbacks: true);
+      response = await _post(system, messages, schema, quick, fallbacks: true);
     } on _FallbackRejected {
       // Si la cuenta o el modelo no aceptan fallbacks, se pide sin ellos.
-      response = await _post(system, messages, schema, fallbacks: false);
+      response = await _post(system, messages, schema, quick, fallbacks: false);
     }
     return _reply(response);
   }
@@ -68,7 +69,8 @@ class ClaudeClient implements AiClient {
   Future<Map<String, dynamic>> _post(
     String system,
     List<Map<String, dynamic>> messages,
-    Map<String, dynamic> schema, {
+    Map<String, dynamic> schema,
+    bool quick, {
     required bool fallbacks,
   }) async {
     final response = await aiPost(
@@ -87,7 +89,7 @@ class ClaudeClient implements AiClient {
         'messages': messages,
         'thinking': {'type': 'adaptive'},
         'output_config': {
-          'effort': 'medium',
+          'effort': quick ? 'low' : 'medium',
           'format': {'type': 'json_schema', 'schema': schema},
         },
         // Las imágenes se reenvían en cada vuelta del chat: el caché las abarata.

@@ -225,3 +225,25 @@ Future<void> showSettings(BuildContext context, AppSettings settings) {
     ),
   );
 }
+
+/// Si falta la API key del servicio de IA elegido, lo dice y ofrece abrir
+/// la configuración. Devuelve si ya hay key.
+Future<bool> ensureApiKey(BuildContext context, AppSettings settings) async {
+  if (settings.hasApiKey) return true;
+  final open = await showDialog<bool>(
+    context: context,
+    builder: (context) => AlertDialog(
+      title: const Text('Falta la API key'),
+      content: Text(
+        'Para importar con IA escribe tu API key de ${settings.aiProvider.company} '
+        '(o elige otro servicio) en ⚙ Configuración. Se guarda solo en este dispositivo.',
+      ),
+      actions: [
+        TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
+        FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Abrir ⚙')),
+      ],
+    ),
+  );
+  if (open == true && context.mounted) await showSettings(context, settings);
+  return settings.hasApiKey;
+}

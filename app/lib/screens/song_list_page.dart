@@ -18,7 +18,11 @@ class SongListPage extends StatefulWidget {
     required this.settings,
     required this.onOpen,
     required this.onCreate,
+    this.onSearchWeb,
   });
+
+  /// Buscar acordes en internet (navegador de la app).
+  final VoidCallback? onSearchWeb;
 
   final SongRepository repo;
   final AppSettings settings;
@@ -97,24 +101,7 @@ class _SongListPageState extends State<SongListPage> {
   }
 
   Future<void> _import() async {
-    if (!settings.hasApiKey) {
-      final open = await showDialog<bool>(
-        context: context,
-        builder: (context) => AlertDialog(
-          title: const Text('Falta la API key'),
-          content: Text(
-            'Para importar con IA escribe tu API key de ${settings.aiProvider.company} '
-            '(o elige otro servicio) en ⚙ Configuración. Se guarda solo en este dispositivo.',
-          ),
-          actions: [
-            TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
-            FilledButton(onPressed: () => Navigator.pop(context, true), child: const Text('Abrir ⚙')),
-          ],
-        ),
-      );
-      if (open == true && mounted) await showSettings(context, settings);
-      if (!settings.hasApiKey || !mounted) return;
-    }
+    if (!await ensureApiKey(context, settings) || !mounted) return;
     final song = await Navigator.of(context).push<Song>(
       MaterialPageRoute(builder: (_) => ImportPage(repo: repo, settings: settings)),
     );
@@ -276,6 +263,14 @@ class _SongListPageState extends State<SongListPage> {
                       label: const Text('Nueva'),
                     ),
                     const SizedBox(width: 8),
+                    if (widget.onSearchWeb != null) ...[
+                      OutlinedButton.icon(
+                        onPressed: widget.onSearchWeb,
+                        icon: const Icon(Icons.travel_explore),
+                        label: const Text('Buscar en internet'),
+                      ),
+                      const SizedBox(width: 8),
+                    ],
                     FilledButton.icon(
                       onPressed: _import,
                       icon: const Icon(Icons.auto_awesome),
@@ -387,12 +382,14 @@ class _SongListPageState extends State<SongListPage> {
             'reorganize' => _toggleReorganize(),
             'new' => _create(),
             'import' => _import(),
+            'web' => widget.onSearchWeb?.call(),
             _ => showSettings(context, settings),
           },
           itemBuilder: (_) => [
             if (!archive) PopupMenuItem(value: 'reorganize', enabled: live.length > 1, child: const Text('Reorganizar')),
             const PopupMenuItem(value: 'new', child: Text('Canción nueva')),
             const PopupMenuItem(value: 'import', child: Text('Importar con IA')),
+            if (widget.onSearchWeb != null) const PopupMenuItem(value: 'web', child: Text('Buscar en internet')),
             const PopupMenuItem(value: 'settings', child: Text('Configuración')),
           ],
         ),

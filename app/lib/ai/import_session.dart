@@ -9,11 +9,15 @@ export 'ai_client.dart' show AiClient, AiException, AiProvider, ImportImage;
 
 /// Un mensaje del chat tal como se muestra.
 class ChatEntry {
-  const ChatEntry({required this.fromUser, required this.text, this.images = const []});
+  const ChatEntry({required this.fromUser, required this.text, this.images = const [], this.sent});
 
   final bool fromUser;
   final String text;
   final List<ImportImage> images;
+
+  /// Lo que se mandó de verdad cuando no es lo que se muestra (el texto de
+  /// una página web).
+  final String? sent;
 }
 
 /// Importar una canción desde imágenes o texto conversando con la IA: cada
@@ -67,7 +71,8 @@ Cuando el usuario corrija algo (nombres, vueltas, acordes, orden), aplica su cri
     },
   };
 
-  Future<void> send(String text, List<ImportImage> images) async {
+  /// Con [shownAs], el chat muestra eso en vez del texto (largo) enviado.
+  Future<void> send(String text, List<ImportImage> images, {String? shownAs}) async {
     final trimmed = text.trim();
     if (busy || (trimmed.isEmpty && images.isEmpty)) return;
     final first = _history.isEmpty;
@@ -75,7 +80,9 @@ Cuando el usuario corrija algo (nombres, vueltas, acordes, orden), aplica su cri
         ? (first ? 'Convierte esto en una canción.' : 'Agregué más imágenes de la misma canción.')
         : (first ? 'Convierte esto en una canción.\n\n$trimmed' : trimmed);
 
-    entries.add(ChatEntry(fromUser: true, text: trimmed, images: images));
+    entries.add(
+      ChatEntry(fromUser: true, text: shownAs ?? trimmed, images: images, sent: shownAs == null ? null : trimmed),
+    );
     _history.add(AiTurn.user(prompt, images));
     busy = true;
     error = null;

@@ -244,4 +244,17 @@ void main() {
       expect(session.entries, isEmpty);
     });
   });
+
+  test('una página web: el chat la muestra corta y se manda completa', () async {
+    late Map<String, dynamic> body;
+    final session = ImportSession(ClaudeClient('sk-test', client: MockClient((request) async {
+      body = jsonDecode(request.body) as Map<String, dynamic>;
+      return reply(songJson(), 'Leí la página.');
+    })));
+    await session.send('PAGINA LARGA D A Bm G', const [], shownAs: 'Página: Santo');
+    expect(session.entries.first.text, 'Página: Santo');
+    expect(session.entries.first.sent, 'PAGINA LARGA D A Bm G');
+    expect(body['messages'][0]['content'].last['text'], contains('PAGINA LARGA'));
+    expect(session.hasSong, isTrue);
+  });
 }

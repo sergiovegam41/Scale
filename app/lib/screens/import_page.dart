@@ -4,10 +4,10 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:scale_core/scale_core.dart';
 
-import '../ai/claude_client.dart';
-import '../ai/groq_client.dart';
+import '../ai/ai_factory.dart';
 import '../ai/import_session.dart';
 import '../settings.dart';
+import '../web/captured_page.dart';
 import '../storage/song_repository.dart';
 import '../widgets/chord_cell.dart';
 import '../widgets/dialogs.dart';
@@ -17,26 +17,20 @@ import '../widgets/responsive.dart';
 /// Importar una canción desde capturas, fotos o texto, refinándola en un chat
 /// con la IA. Al guardar, devuelve la canción con `Navigator.pop`.
 class ImportPage extends StatefulWidget {
-  const ImportPage({super.key, required this.repo, required this.settings});
+  const ImportPage({super.key, required this.repo, required this.settings, this.page});
 
   final SongRepository repo;
   final AppSettings settings;
+
+  /// Página web a importar: se manda sola al abrir.
+  final CapturedPage? page;
 
   @override
   State<ImportPage> createState() => _ImportPageState();
 }
 
 class _ImportPageState extends State<ImportPage> {
-  late final ImportSession session = ImportSession(_client(widget.settings));
-
-  static AiClient _client(AppSettings s) => switch (s.aiProvider) {
-        AiProvider.claude => ClaudeClient(s.anthropicApiKey),
-        AiProvider.groq => GroqClient(
-            s.groqApiKey,
-            textModel: s.groqTextModel,
-            visionModel: s.groqVisionModel,
-          ),
-      };
+  late final ImportSession session = ImportSession(aiClientFor(widget.settings));
   final TextEditingController input = TextEditingController();
   final ScrollController chatScroll = ScrollController();
   final ImagePicker picker = ImagePicker();
@@ -48,6 +42,18 @@ class _ImportPageState extends State<ImportPage> {
   void initState() {
     super.initState();
     session.addListener(_scrollChatToEnd);
+    final page = widget.page;
+    if (page != null) WidgetsBinding.instance.addPostFrameCallback((_) => _sendPage(page));
+  }
+
+  /// Si falló el envío de una página, se ofrece reintentar (no se pone el
+  /// texto de la página en la caja).
+  CapturedPage? _pageRetry;
+
+  Future<void> _sendPage(CapturedPage page) async {
+    setState(() => _pageRetry = null);
+    await session.send(page.prompt, const [], shownAs: page.label);
+    if (session.lastFailed != null && mounted) setState(() => _pageRetry = page);
   }
 
   @override
@@ -99,7 +105,7 @@ class _ImportPageState extends State<ImportPage> {
     await session.send(text, images);
     // Si falló, se devuelve lo escrito para reintentar.
     final failed = session.lastFailed;
-    if (failed != null && mounted) {
+    if (failed != null && failed.sent == null && mounted) {
       setState(() {
         input.text = failed.text;
         pending.addAll(failed.images);
@@ -329,6 +335,15 @@ class _ImportPageState extends State<ImportPage> {
                   padding: const EdgeInsets.all(10),
                   decoration: BoxDecoration(color: scheme.errorContainer, borderRadius: BorderRadius.circular(10)),
                   child: Text(session.error!, style: TextStyle(color: scheme.onErrorContainer)),
+                ),
+              if (_pageRetry != null && !session.busy)
+                Align(
+                  alignment: Alignment.centerLeft,
+                  child: TextButton.icon(
+                    onPressed: () => _sendPage(_pageRetry!),
+                    icon: const Icon(Icons.refresh),
+                    label: const Text('Reintentar con la página'),
+                  ),
                 ),
             ],
           ),
