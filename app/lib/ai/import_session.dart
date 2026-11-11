@@ -3,17 +3,9 @@ import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:scale_core/scale_core.dart';
 
-import 'claude_client.dart';
+import 'ai_client.dart';
 
-/// Imagen adjunta (ya reducida al tomarla de la cámara o la galería).
-class ImportImage {
-  const ImportImage(this.bytes, this.mediaType);
-
-  final Uint8List bytes;
-
-  /// image/jpeg, image/png o image/webp.
-  final String mediaType;
-}
+export 'ai_client.dart' show AiClient, AiException, AiProvider, ImportImage;
 
 /// Un mensaje del chat tal como se muestra.
 class ChatEntry {
@@ -28,13 +20,15 @@ class ChatEntry {
 /// respuesta trae un borrador completo que se valida con el núcleo y se
 /// muestra como vista previa.
 class ImportSession extends ChangeNotifier {
-  ImportSession(String apiKey, {ClaudeClient? client}) : _client = client ?? ClaudeClient(apiKey);
+  ImportSession(this._client);
 
-  final ClaudeClient _client;
+  final AiClient _client;
 
-  /// Conversación en el formato de la API. Las respuestas se guardan
-  /// completas (con sus bloques de razonamiento) y nunca se editan.
-  final List<Map<String, dynamic>> _history = [];
+  AiProvider get provider => _client.provider;
+
+  /// Conversación tal como se manda a la IA. Las respuestas se guardan
+  /// completas (Claude necesita sus bloques de razonamiento) y nunca se editan.
+  final List<AiTurn> _history = [];
 
   final List<ChatEntry> entries = [];
   SongDraft? draft;
@@ -82,46 +76,28 @@ Cuando el usuario corrija algo (nombres, vueltas, acordes, orden), aplica su cri
         : (first ? 'Convierte esto en una canción.\n\n$trimmed' : trimmed);
 
     entries.add(ChatEntry(fromUser: true, text: trimmed, images: images));
-    _history.add({
-      'role': 'user',
-      'content': [
-        for (final image in images)
-          {
-            'type': 'image',
-            'source': {
-              'type': 'base64',
-              'media_type': image.mediaType,
-              'data': base64Encode(image.bytes),
-            },
-          },
-        {'type': 'text', 'text': prompt},
-      ],
-    });
+    _history.add(AiTurn.user(prompt, images));
     busy = true;
     error = null;
     lastFailed = null;
     notifyListeners();
 
     try {
-      final response = await _client.createMessage(system: system, messages: _history, schema: _schema);
-      final stop = response['stop_reason'];
-      if (stop == 'refusal') {
-        throw const ClaudeException('La IA no pudo procesar esta solicitud. Prueba con otra imagen o texto.');
-      }
-      if (stop == 'max_tokens') {
-        throw const ClaudeException('La respuesta quedó incompleta (canción muy larga). Prueba por partes.');
-      }
-      final content = (response['content'] as List).cast<Map<String, dynamic>>();
-      final textOut = content.where((b) => b['type'] == 'text').map((b) => b['text'] as String).join();
-      final json = jsonDecode(textOut) as Map<String, dynamic>;
+      final reply = await _client.complete(
+        system: system,
+        history: _history,
+        schema: _schema,
+        schemaName: 'cancion',
+      );
+      final json = jsonDecode(reply.text) as Map<String, dynamic>;
       final newDraft = SongDraft.fromJson(json['song'] as Map<String, dynamic>);
       final newResult = newDraft.toSong(source: _hadImages ? SongSource.image : SongSource.import);
       // Validado: la respuesta completa queda en el historial, sin tocarla.
-      _history.add({'role': 'assistant', 'content': content});
+      _history.add(AiTurn.assistant(reply.text, reply.raw));
       draft = newDraft;
       result = newResult;
       entries.add(ChatEntry(fromUser: false, text: (json['reply'] as String? ?? '').trim()));
-    } on ClaudeException catch (e) {
+    } on AiException catch (e) {
       _undoLastUserTurn();
       error = e.message;
     } catch (e) {
@@ -139,7 +115,7 @@ Cuando el usuario corrija algo (nombres, vueltas, acordes, orden), aplica su cri
   /// Si la vuelta falló, se quita el mensaje del usuario (y se le deja el
   /// texto para reintentar) para que el historial siga alternando turnos.
   void _undoLastUserTurn() {
-    if (_history.isNotEmpty && _history.last['role'] == 'user') _history.removeLast();
+    if (_history.isNotEmpty && _history.last.fromUser) _history.removeLast();
     if (entries.isNotEmpty && entries.last.fromUser) lastFailed = entries.removeLast();
   }
 

@@ -4,6 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:scale_core/scale_core.dart';
 
+import '../ai/claude_client.dart';
+import '../ai/groq_client.dart';
 import '../ai/import_session.dart';
 import '../settings.dart';
 import '../storage/song_repository.dart';
@@ -25,7 +27,16 @@ class ImportPage extends StatefulWidget {
 }
 
 class _ImportPageState extends State<ImportPage> {
-  late final ImportSession session = ImportSession(widget.settings.anthropicApiKey);
+  late final ImportSession session = ImportSession(_client(widget.settings));
+
+  static AiClient _client(AppSettings s) => switch (s.aiProvider) {
+        AiProvider.claude => ClaudeClient(s.anthropicApiKey),
+        AiProvider.groq => GroqClient(
+            s.groqApiKey,
+            textModel: s.groqTextModel,
+            visionModel: s.groqVisionModel,
+          ),
+      };
   final TextEditingController input = TextEditingController();
   final ScrollController chatScroll = ScrollController();
   final ImagePicker picker = ImagePicker();
@@ -114,7 +125,7 @@ class _ImportPageState extends State<ImportPage> {
           ? _compact()
           : Scaffold(
               appBar: AppBar(
-                title: const Text('Importar canción'),
+                title: Text('Importar canción con ${session.provider.label}'),
                 actions: [
                   FilledButton.icon(
                     onPressed: session.hasSong && !session.busy ? _save : null,
@@ -143,7 +154,7 @@ class _ImportPageState extends State<ImportPage> {
       initialIndex: 1,
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('Importar'),
+          title: Text('Importar · ${session.provider.label}'),
           actions: [
             IconButton.filled(
               tooltip: 'Guardar canción',

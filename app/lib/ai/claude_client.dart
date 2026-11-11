@@ -1,27 +1,12 @@
-import 'dart:async';
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:http/http.dart' as http;
 
-/// Error de la API de Claude con un mensaje listo para mostrar.
-class ClaudeException implements Exception {
-  const ClaudeException(this.message, {this.retryable = false});
-
-  final String message;
-
-  /// Se puede reintentar (límite de uso, servicio ocupado, red).
-  final bool retryable;
-
-  @override
-  String toString() => message;
-}
+import 'ai_client.dart';
 
 /// Cliente mínimo de la API de mensajes de Claude por HTTP (Dart no tiene SDK
 /// oficial). Pide salida estructurada (JSON con esquema) y razonamiento
 /// adaptativo; si el modelo declina por seguridad, el servidor reintenta con
 /// otro modelo (fallbacks).
-class ClaudeClient {
+class ClaudeClient implements AiClient {
   ClaudeClient(this.apiKey, {http.Client? client}) : _http = client ?? http.Client();
 
   static const String model = 'claude-opus-5-5';
@@ -31,89 +16,92 @@ class ClaudeClient {
   final String apiKey;
   final http.Client _http;
 
-  /// Envía la conversación y devuelve el mensaje de respuesta tal cual
-  /// (incluye bloques de razonamiento que hay que reenviar sin cambios).
-  Future<Map<String, dynamic>> createMessage({
+  @override
+  AiProvider get provider => AiProvider.claude;
+
+  @override
+  Future<AiReply> complete({
     required String system,
-    required List<Map<String, dynamic>> messages,
+    required List<AiTurn> history,
     required Map<String, dynamic> schema,
-    int maxTokens = 16000,
+    required String schemaName,
   }) async {
+    final messages = [for (final turn in history) _message(turn)];
+    Map<String, dynamic> response;
     try {
-      return await _post(system, messages, schema, maxTokens, fallbacks: true);
+      response = await _post(system, messages, schema, fallbacks: true);
     } on _FallbackRejected {
       // Si la cuenta o el modelo no aceptan fallbacks, se pide sin ellos.
-      return _post(system, messages, schema, maxTokens, fallbacks: false);
+      response = await _post(system, messages, schema, fallbacks: false);
     }
+    return _reply(response);
+  }
+
+  static Map<String, dynamic> _message(AiTurn turn) => turn.fromUser
+      ? {
+          'role': 'user',
+          'content': [
+            for (final image in turn.images)
+              {
+                'type': 'image',
+                'source': {'type': 'base64', 'media_type': image.mediaType, 'data': image.base64},
+              },
+            {'type': 'text', 'text': turn.text},
+          ],
+        }
+      // La respuesta vuelve completa, con sus bloques de razonamiento.
+      : {'role': 'assistant', 'content': turn.raw ?? [{'type': 'text', 'text': turn.text}]};
+
+  static AiReply _reply(Map<String, dynamic> response) {
+    final stop = response['stop_reason'];
+    if (stop == 'refusal') {
+      throw const AiException('La IA no pudo procesar esta solicitud. Prueba con otra imagen o texto.');
+    }
+    if (stop == 'max_tokens') {
+      throw const AiException('La respuesta quedó incompleta (canción muy larga). Prueba por partes.');
+    }
+    final content = (response['content'] as List).cast<Map<String, dynamic>>();
+    final text = content.where((b) => b['type'] == 'text').map((b) => b['text'] as String).join();
+    return AiReply(text, content);
   }
 
   Future<Map<String, dynamic>> _post(
     String system,
     List<Map<String, dynamic>> messages,
-    Map<String, dynamic> schema,
-    int maxTokens, {
+    Map<String, dynamic> schema, {
     required bool fallbacks,
   }) async {
-    final body = {
-      'model': model,
-      'max_tokens': maxTokens,
-      'system': system,
-      'messages': messages,
-      'thinking': {'type': 'adaptive'},
-      'output_config': {
-        'effort': 'medium',
-        'format': {'type': 'json_schema', 'schema': schema},
+    final response = await aiPost(
+      _http,
+      _endpoint,
+      {
+        'content-type': 'application/json',
+        'x-api-key': apiKey,
+        'anthropic-version': '2023-06-01',
+        if (fallbacks) 'anthropic-beta': _fallbackBeta,
       },
-      // Las imágenes se reenvían en cada vuelta del chat: el caché las abarata.
-      'cache_control': {'type': 'ephemeral'},
-      if (fallbacks) 'fallbacks': 'default',
-    };
-    final http.Response response;
-    try {
-      response = await _http
-          .post(
-            Uri.parse(_endpoint),
-            headers: {
-              'content-type': 'application/json',
-              'x-api-key': apiKey,
-              'anthropic-version': '2023-06-01',
-              if (fallbacks) 'anthropic-beta': _fallbackBeta,
-            },
-            body: jsonEncode(body),
-          )
-          .timeout(const Duration(minutes: 5));
-    } on TimeoutException {
-      throw const ClaudeException('La IA tardó demasiado en responder. Inténtalo de nuevo.', retryable: true);
-    } on SocketException {
-      throw const ClaudeException('Sin conexión a internet. Importar necesita internet.', retryable: true);
-    } on http.ClientException catch (e) {
-      throw ClaudeException('No se pudo conectar con la IA: ${e.message}', retryable: true);
-    }
+      {
+        'model': model,
+        'max_tokens': 16000,
+        'system': system,
+        'messages': messages,
+        'thinking': {'type': 'adaptive'},
+        'output_config': {
+          'effort': 'medium',
+          'format': {'type': 'json_schema', 'schema': schema},
+        },
+        // Las imágenes se reenvían en cada vuelta del chat: el caché las abarata.
+        'cache_control': {'type': 'ephemeral'},
+        if (fallbacks) 'fallbacks': 'default',
+      },
+    );
+    if (response.statusCode == 200) return aiDecode(response.body);
 
-    final json = _decode(response.body);
-    if (response.statusCode == 200) return json;
-
-    final error = (json['error'] as Map<String, dynamic>?)?['message'] as String? ?? response.body;
+    final error = aiErrorMessage(response);
     if (fallbacks && response.statusCode == 400 && error.toLowerCase().contains('fallback')) {
       throw _FallbackRejected();
     }
-    throw switch (response.statusCode) {
-      401 => const ClaudeException('La API key no es válida. Revísala en ⚙ Configuración.'),
-      403 => const ClaudeException('La API key no tiene permiso para usar este modelo.'),
-      413 => const ClaudeException('Las imágenes son demasiado grandes. Prueba con menos o más pequeñas.'),
-      429 => const ClaudeException('Se alcanzó el límite de uso de la API. Espera un momento.', retryable: true),
-      529 || >= 500 =>
-        const ClaudeException('El servicio de IA está ocupado. Inténtalo en un momento.', retryable: true),
-      _ => ClaudeException('La IA rechazó la solicitud: $error'),
-    };
-  }
-
-  static Map<String, dynamic> _decode(String body) {
-    try {
-      return jsonDecode(body) as Map<String, dynamic>;
-    } catch (_) {
-      return const {};
-    }
+    throw aiHttpError(provider, response.statusCode, error);
   }
 }
 

@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
+import 'ai/ai_client.dart' show AiProvider;
 import 'storage/app_dir.dart';
 import 'package:scale_core/scale_core.dart';
 
@@ -54,7 +55,40 @@ class AppSettings extends ChangeNotifier {
       _set(() => _anthropicApiKey = value.trim(), value.trim() != _anthropicApiKey);
   String _anthropicApiKey = '';
 
-  bool get hasApiKey => _anthropicApiKey.isNotEmpty;
+  /// Servicio de IA para importar (Claude o Groq).
+  AiProvider get aiProvider => _aiProvider;
+  set aiProvider(AiProvider value) => _set(() => _aiProvider = value, value != _aiProvider);
+  AiProvider _aiProvider = AiProvider.claude;
+
+  /// API key de Groq (también solo en este dispositivo).
+  String get groqApiKey => _groqApiKey;
+  set groqApiKey(String value) => _set(() => _groqApiKey = value.trim(), value.trim() != _groqApiKey);
+  String _groqApiKey = '';
+
+  /// Modelos de Groq; vacío = el predeterminado de la app. Groq cambia sus
+  /// modelos seguido, así se puede cambiar sin actualizar la app.
+  String get groqTextModel => _groqTextModel;
+  set groqTextModel(String value) =>
+      _set(() => _groqTextModel = value.trim(), value.trim() != _groqTextModel);
+  String _groqTextModel = '';
+
+  String get groqVisionModel => _groqVisionModel;
+  set groqVisionModel(String value) =>
+      _set(() => _groqVisionModel = value.trim(), value.trim() != _groqVisionModel);
+  String _groqVisionModel = '';
+
+  String apiKeyFor(AiProvider provider) => switch (provider) {
+        AiProvider.claude => _anthropicApiKey,
+        AiProvider.groq => _groqApiKey,
+      };
+
+  void setApiKey(AiProvider provider, String value) => switch (provider) {
+        AiProvider.claude => anthropicApiKey = value,
+        AiProvider.groq => groqApiKey = value,
+      };
+
+  /// Hay API key para el servicio elegido.
+  bool get hasApiKey => apiKeyFor(_aiProvider).isNotEmpty;
 
   /// Capa de transpose de la pantalla en vivo (se recuerda entre sesiones).
   int get liveLayer => _liveLayer;
@@ -106,6 +140,10 @@ class AppSettings extends ChangeNotifier {
       _transposeRange = json['transposeRange'] as int? ?? _transposeRange;
       _liveLayer = json['liveLayer'] as int? ?? _liveLayer;
       _anthropicApiKey = json['anthropicApiKey'] as String? ?? _anthropicApiKey;
+      _aiProvider = AiProvider.values.asNameMap()[json['aiProvider']] ?? _aiProvider;
+      _groqApiKey = json['groqApiKey'] as String? ?? _groqApiKey;
+      _groqTextModel = json['groqTextModel'] as String? ?? _groqTextModel;
+      _groqVisionModel = json['groqVisionModel'] as String? ?? _groqVisionModel;
       _songSort = SongSort.values.asNameMap()[json['songSort']] ?? _songSort;
       _songOrder = [for (final id in (json['songOrder'] as List?) ?? const []) id as String];
       _archived = {for (final id in (json['archivedSongs'] as List?) ?? const []) id as String};
@@ -128,6 +166,10 @@ class AppSettings extends ChangeNotifier {
               'transposeRange': _transposeRange,
               'liveLayer': _liveLayer,
               'anthropicApiKey': _anthropicApiKey,
+              'aiProvider': _aiProvider.name,
+              'groqApiKey': _groqApiKey,
+              'groqTextModel': _groqTextModel,
+              'groqVisionModel': _groqVisionModel,
               'songSort': _songSort.name,
               'songOrder': _songOrder,
               'archivedSongs': _archived.toList(),

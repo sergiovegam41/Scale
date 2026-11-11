@@ -102,9 +102,9 @@ class _SongListPageState extends State<SongListPage> {
         context: context,
         builder: (context) => AlertDialog(
           title: const Text('Falta la API key'),
-          content: const Text(
-            'Para importar con IA escribe tu API key de Anthropic en ⚙ Configuración. '
-            'Se guarda solo en esta tablet.',
+          content: Text(
+            'Para importar con IA escribe tu API key de ${settings.aiProvider.company} '
+            '(o elige otro servicio) en ⚙ Configuración. Se guarda solo en este dispositivo.',
           ),
           actions: [
             TextButton(onPressed: () => Navigator.pop(context, false), child: const Text('Cancelar')),
