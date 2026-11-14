@@ -173,7 +173,8 @@ class _SongListPageState extends State<SongListPage> {
         final songs = q.isEmpty ? all : all.where((s) => SongListPage.fold(s.title).contains(q)).toList();
         final sort = archive ? settings.archiveSort : settings.songSort;
         return Scaffold(
-          appBar: context.isCompact ? _compactBar(live, sort) : AppBar(
+          // La barra ancha necesita ~1100 px; la tablet en vertical usa la compacta.
+          appBar: context.isCompact || MediaQuery.sizeOf(context).width < 1100 ? _compactBar(live, sort) : AppBar(
             title: reorganizing
                 ? Text('Para tocar (${live.length})')
                 : SegmentedButton<bool>(
@@ -264,10 +265,11 @@ class _SongListPageState extends State<SongListPage> {
                     ),
                     const SizedBox(width: 8),
                     if (widget.onSearchWeb != null) ...[
-                      OutlinedButton.icon(
+                      // Solo el ícono: la barra ya va llena.
+                      IconButton.outlined(
+                        tooltip: 'Buscar en internet',
                         onPressed: widget.onSearchWeb,
                         icon: const Icon(Icons.travel_explore),
-                        label: const Text('Buscar en internet'),
                       ),
                       const SizedBox(width: 8),
                     ],

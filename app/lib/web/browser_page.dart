@@ -87,12 +87,14 @@ class _BrowserPageState extends State<BrowserPage> {
   String? _pendingUrl;
   DateTime _pendingAt = DateTime(0);
   String? _userAgent;
+  Timer? _refreshSoon;
 
   static const int _maxBytes = 20 * 1024 * 1024;
   static final RegExp _fileUrl = RegExp(r'\.(midi?|mxl|musicxml)(\?|#|$)', caseSensitive: false);
 
   @override
   void dispose() {
+    _refreshSoon?.cancel();
     _win?.dispose();
     super.dispose();
   }
@@ -192,6 +194,10 @@ class _BrowserPageState extends State<BrowserPage> {
           onUrlChange: (change) {
             final u = change.url;
             if (u != null && mounted) setState(() => url = Uri.tryParse(u) ?? url);
+            // Las páginas que cambian sin recargar (como BitMidi) no avisan
+            // al terminar: se actualizan título, botones y archivos aparte.
+            _refreshSoon?.cancel();
+            _refreshSoon = Timer(const Duration(milliseconds: 900), () => _onPageFinished(null));
           },
         ),
       )
@@ -235,7 +241,7 @@ JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(function (a)
         if (item is! Map || !seen.add('${item['h']}')) continue;
         final u = Uri.tryParse('${item['h']}');
         if (u == null || !u.scheme.startsWith('http')) continue;
-        final label = '${item['t']}'.trim();
+        final label = '${item['t']}'.trim().replaceFirst(RegExp(r'^(download|descargar)\s+', caseSensitive: false), '');
         found.add(PageFile(u, label.isEmpty ? Uri.decodeComponent(u.pathSegments.lastOrNull ?? u.host) : label));
       }
       setState(() => files = found);
@@ -250,6 +256,14 @@ JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(function (a)
     if (m != null) return Uri.decodeComponent(m.group(1)!.trim());
     final last = u.pathSegments.where((s) => s.isNotEmpty).lastOrNull;
     return last == null ? u.host : Uri.decodeComponent(last);
+  }
+
+  /// Título de página sin el nombre del sitio ni la extensión.
+  static String _cleanTitle(String t) {
+    var s = t;
+    if (s.startsWith('"') && s.endsWith('"') && s.length >= 2) s = s.substring(1, s.length - 1);
+    s = s.split(RegExp(r'\s+[—–|]\s+')).first;
+    return s.replaceFirst(RegExp(r'\.(midi?|mxl|musicxml)$', caseSensitive: false), '').trim();
   }
 
   /// Descarga el archivo y, si es MIDI o MusicXML, lo abre como partitura.
@@ -268,7 +282,15 @@ JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(function (a)
       }
       final bytes = response.bodyBytes;
       if (bytes.length > _maxBytes) throw const FormatException('el archivo es demasiado grande');
-      final fileName = _nameFrom(u, name, response.headers['content-disposition']);
+      var fileName = _nameFrom(u, name, response.headers['content-disposition']);
+      // Si el archivo se llama con un número ("101323.mid"), mejor el
+      // título de la página ("Zelda – Astral Observatory.mid – BitMidi").
+      final base = fileName.replaceFirst(RegExp(r'\.[a-z0-9]{2,8}$', caseSensitive: false), '');
+      if (!RegExp(r'[a-zA-Z]{3}').hasMatch(base)) {
+        final pageTitle = await _eval('JSON.stringify(document.title)');
+        final clean = _cleanTitle(pageTitle ?? title);
+        if (clean.isNotEmpty) fileName = clean;
+      }
       final kind = ScoreFileKind.of(bytes, name: fileName, mimeType: response.headers['content-type'] ?? '');
       if (kind == ScoreFileKind.html) {
         // No era un archivo: se abre como página.
@@ -366,8 +388,24 @@ JSON.stringify(Array.from(document.querySelectorAll('a[href]')).map(function (a)
     final scheme = Theme.of(context).colorScheme;
     final text = Theme.of(context).textTheme;
     final plan = widget.plan;
+    // El botón Atrás del sistema vuelve a la página anterior; la X cierra.
+    return PopScope(
+      canPop: !canBack,
+      onPopInvokedWithResult: (didPop, _) {
+        if (!didPop) _back();
+      },
+      child: _scaffold(context, compact, scheme, text, plan),
+    );
+  }
+
+  Widget _scaffold(BuildContext context, bool compact, ColorScheme scheme, TextTheme text, SearchPlan? plan) {
     return Scaffold(
       appBar: AppBar(
+        leading: IconButton(
+          tooltip: 'Cerrar el navegador',
+          onPressed: () => Navigator.of(context).pop(),
+          icon: const Icon(Icons.close),
+        ),
         titleSpacing: 0,
         title: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
